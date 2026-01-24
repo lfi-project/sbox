@@ -1,0 +1,5 @@
+.cache
+reference
+subprojects/libffi-3.5.2
+subprojects/pbox
+subprojects/packagecache

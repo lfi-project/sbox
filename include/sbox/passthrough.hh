@@ -102,16 +102,20 @@ public:
     }
 };
 
-// Passthrough backend - loads library normally via dlopen
+// Passthrough backend - loads library normally via dlopen, or static mode
 template<>
 class Sandbox<Passthrough> {
 public:
+    // Dynamic mode - loads library via dlopen
     explicit Sandbox(const char* library_path) {
         handle_ = dlopen(library_path, RTLD_NOW);
         if (!handle_) {
             throw std::runtime_error(std::string("Failed to load library: ") + dlerror());
         }
     }
+
+    // Static mode - no library loading, use direct function pointers
+    Sandbox() = default;
 
     ~Sandbox() {
         if (handle_) {
@@ -139,14 +143,20 @@ public:
         return *this;
     }
 
-    // Call a function by name
+    // Call a function by name (dynamic mode)
     template<typename Sig, typename... Args>
     auto call(const char* name, Args... args) {
         void* fn = lookup(name);
         return call_ptr_sig<Sig>(fn, args...);
     }
 
-    // Context-aware call that triggers finalize after the call
+    // Call a function by pointer (static mode) - zero overhead
+    template<typename Sig, typename... Args>
+    auto call(Sig* fn, Args... args) {
+        return fn(args...);
+    }
+
+    // Context-aware call by name
     template<typename Sig, typename... Args>
     auto call(CallContext<Passthrough>& ctx, const char* name, Args... args)
         -> decltype(this->template call<Sig>(name, args...)) {
@@ -160,15 +170,34 @@ public:
         }
     }
 
+    // Context-aware call by pointer (static mode)
+    template<typename Sig, typename... Args>
+    auto call(CallContext<Passthrough>& ctx, Sig* fn, Args... args) {
+        if constexpr (std::is_void_v<decltype(fn(args...))>) {
+            fn(args...);
+            ctx.finalize();
+        } else {
+            auto result = fn(args...);
+            ctx.finalize();
+            return result;
+        }
+    }
+
     // Create a call context for in/out/inout parameters
     CallContext<Passthrough> context() {
         return CallContext<Passthrough>(*this);
     }
 
-    // Get a function handle for repeated calls
+    // Get a function handle for repeated calls (dynamic mode)
     template<typename Sig>
     FnHandle<Passthrough, Sig> fn(const char* name) {
         return FnHandle<Passthrough, Sig>(*this, lookup(name));
+    }
+
+    // Get a function handle by pointer (static mode) - just returns the pointer
+    template<typename Sig>
+    Sig* fn(Sig* f) {
+        return f;
     }
 
     // Call via function pointer (used by FnHandle)

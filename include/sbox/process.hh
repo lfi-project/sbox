@@ -2,6 +2,10 @@
 
 #include "sbox.hh"
 
+#ifdef SBOX_STATIC
+#error "SBOX_STATIC cannot be used with the process backend"
+#endif
+
 #include <sys/types.h>
 #include <type_traits>
 #include <utility>
@@ -185,6 +189,7 @@ public:
     template<typename Ret, typename... Args>
     void* register_callback(Ret(*fn)(Args...)) {
         constexpr int nargs = sizeof...(Args);
+        static_assert(nargs <= PBOX_MAX_ARGS, "Too many callback arguments (max is PBOX_MAX_ARGS)");
         PBoxType arg_types[nargs > 0 ? nargs : 1];
         if constexpr (nargs > 0) {
             fill_arg_types<0, Args...>(arg_types);
@@ -232,6 +237,7 @@ private:
     template<typename Ret, typename... Args>
     Ret call_impl(void* fn, Args... args) {
         constexpr int nargs = sizeof...(Args);
+        static_assert(nargs <= PBOX_MAX_ARGS, "Too many arguments (max is PBOX_MAX_ARGS)");
 
         PBoxType arg_types[nargs > 0 ? nargs : 1];
         void* arg_ptrs[nargs > 0 ? nargs : 1];

@@ -7,6 +7,13 @@
 #include <unordered_map>
 #include <mutex>
 
+// Macro to reference a function - expands differently based on backend
+#ifdef SBOX_STATIC
+#define SBOX_FN(name) (name)
+#else
+#define SBOX_FN(name) (#name)
+#endif
+
 namespace sbox {
 
 // Backend tag types

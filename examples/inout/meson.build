@@ -1,16 +1,14 @@
 backend = get_option('sbox_backend')
 
-thread_dep = dependency('threads')
-
 # Shared library for passthrough backend
-libbench = shared_library('bench',
-  'lib_bench.c',
+libinout = shared_library('inout',
+  'lib_inout.c',
   install: false,
 )
 
 # Sandbox executable for process backend
-bench_sandbox = executable('bench_sandbox',
-  'lib_bench.c',
+inout_sandbox = executable('inout_sandbox',
+  'lib_inout.c',
   link_with: libpbox_sandbox,
   link_args: ['-rdynamic'],
   dependencies: [ffi_dep, dl_dep],
@@ -18,19 +16,27 @@ bench_sandbox = executable('bench_sandbox',
 )
 
 if backend == 'process'
-  bench_main = executable('bench_main',
+  inout_main = executable('inout_main',
     'main.cc',
     include_directories: [sbox_inc, pbox_inc],
     link_with: libpbox,
     cpp_args: ['-DSBOX_PROCESS'],
-    dependencies: [ffi_dep, thread_dep],
+    dependencies: [ffi_dep],
     install: false,
   )
+  test('inout', inout_main,
+    workdir: meson.current_build_dir(),
+    depends: [inout_sandbox],
+  )
 else
-  bench_main = executable('bench_main',
+  inout_main = executable('inout_main',
     'main.cc',
     include_directories: sbox_inc,
-    dependencies: [dependency('dl'), thread_dep],
+    dependencies: [dependency('dl')],
     install: false,
+  )
+  test('inout', inout_main,
+    workdir: meson.current_build_dir(),
+    depends: [libinout],
   )
 endif

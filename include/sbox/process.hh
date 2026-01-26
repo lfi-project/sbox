@@ -4,6 +4,9 @@
 
 #include <sys/types.h>
 #include <type_traits>
+#include <utility>
+#include <vector>
+#include <functional>
 
 extern "C" {
 #include "pbox.h"
@@ -84,6 +87,13 @@ public:
         return call_ptr_sig<Sig>(fn, args...);
     }
 
+    // Context-aware call (defined after CallContext)
+    template<typename Sig, typename... Args>
+    auto call(CallContext<Process>& ctx, const char* name, Args... args);
+
+    // Create a call context (defined after CallContext)
+    inline CallContext<Process> context();
+
     // Get a function handle for repeated calls
     template<typename Sig>
     FnHandle<Process, Sig> fn(const char* name) {
@@ -123,6 +133,25 @@ public:
 
     int munmap(void* addr, size_t length) {
         return pbox_munmap(box_, addr, length);
+    }
+
+    // Identity-mapped memory (same address in host and sandbox)
+    void* mmap_identity(size_t length, int prot) {
+        return pbox_mmap_identity(box_, length, prot);
+    }
+
+    int munmap_identity(void* addr, size_t length) {
+        return pbox_munmap_identity(box_, addr, length);
+    }
+
+    // Arena allocator for identity-mapped memory (per-thread)
+    template<typename T>
+    T* idmem_alloc(size_t count = 1) {
+        return static_cast<T*>(pbox_idmem_alloc(box_, sizeof(T) * count));
+    }
+
+    void idmem_reset() {
+        pbox_idmem_reset(box_);
     }
 
     // File descriptor registration (sends fd to sandbox)
@@ -266,5 +295,81 @@ private:
     std::unordered_map<const char*, void*> symbol_cache_;
     std::mutex cache_mutex_;
 };
+
+// Process CallContext - uses identity-mapped arena
+template<>
+class CallContext<Process> {
+    Sandbox<Process>* sandbox_;
+    std::vector<std::function<void()>> copybacks_;
+    bool finalized_ = false;
+
+public:
+    explicit CallContext(Sandbox<Process>& sb) : sandbox_(&sb) {}
+
+    ~CallContext() {
+        finalize();
+        sandbox_->idmem_reset();
+    }
+
+    CallContext(const CallContext&) = delete;
+    CallContext& operator=(const CallContext&) = delete;
+
+    // Execute all copy-backs (idempotent)
+    void finalize() {
+        if (finalized_) return;
+        finalized_ = true;
+        for (auto& cb : copybacks_) {
+            cb();
+        }
+    }
+
+    // Out: allocate from idmem, register copy-back
+    template<typename T>
+    T* out(T& host_ref) {
+        T* idmem_ptr = sandbox_->template idmem_alloc<T>();
+        T* host_ptr = &host_ref;
+        copybacks_.push_back([host_ptr, idmem_ptr]() {
+            *host_ptr = *idmem_ptr;
+        });
+        return idmem_ptr;
+    }
+
+    // In: allocate from idmem, copy value in
+    template<typename T>
+    const T* in(const T& host_ref) {
+        T* idmem_ptr = sandbox_->template idmem_alloc<T>();
+        *idmem_ptr = host_ref;
+        return idmem_ptr;
+    }
+
+    // InOut: allocate from idmem, copy in, register copy-back
+    template<typename T>
+    T* inout(T& host_ref) {
+        T* idmem_ptr = sandbox_->template idmem_alloc<T>();
+        T* host_ptr = &host_ref;
+        *idmem_ptr = host_ref;
+        copybacks_.push_back([host_ptr, idmem_ptr]() {
+            *host_ptr = *idmem_ptr;
+        });
+        return idmem_ptr;
+    }
+};
+
+// Deferred method definitions (need CallContext to be complete)
+inline CallContext<Process> Sandbox<Process>::context() {
+    return CallContext<Process>(*this);
+}
+
+template<typename Sig, typename... Args>
+auto Sandbox<Process>::call(CallContext<Process>& ctx, const char* name, Args... args) {
+    if constexpr (std::is_void_v<decltype(this->template call<Sig>(name, args...))>) {
+        this->template call<Sig>(name, args...);
+        ctx.finalize();
+    } else {
+        auto result = this->template call<Sig>(name, args...);
+        ctx.finalize();
+        return result;
+    }
+}
 
 } // namespace sbox

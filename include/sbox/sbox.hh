@@ -13,9 +13,12 @@ namespace sbox {
 struct Passthrough {};
 struct Process {};
 
-// Forward declaration
+// Forward declarations
 template<typename Backend>
 class Sandbox;
+
+template<typename Backend>
+class CallContext;
 
 // Function handle - captures sandbox reference for direct calls
 template<typename Backend, typename Sig>

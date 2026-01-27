@@ -19,6 +19,7 @@ namespace sbox {
 // Backend tag types
 struct Passthrough {};
 struct Process {};
+struct LFI {};
 
 // Forward declarations
 template<typename Backend>

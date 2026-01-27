@@ -1,9 +1,12 @@
 #include <cstdio>
 #include <cassert>
 
-#ifdef SBOX_PROCESS
+#if defined(SBOX_PROCESS)
 #include "sbox/process.hh"
 using SboxType = sbox::Sandbox<sbox::Process>;
+#elif defined(SBOX_LFI)
+#include "sbox/lfi.hh"
+using SboxType = sbox::Sandbox<sbox::LFI>;
 #else
 #include "sbox/passthrough.hh"
 using SboxType = sbox::Sandbox<sbox::Passthrough>;
@@ -15,9 +18,12 @@ struct Point {
 };
 
 int main() {
-#ifdef SBOX_PROCESS
+#if defined(SBOX_PROCESS)
     SboxType sandbox("./inout_sandbox");
     printf("Using process backend\n\n");
+#elif defined(SBOX_LFI)
+    SboxType sandbox("./libinout.lfi");
+    printf("Using lfi backend\n\n");
 #else
     SboxType sandbox("./libinout.so");
     printf("Using passthrough backend\n\n");

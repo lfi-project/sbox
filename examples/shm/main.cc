@@ -3,8 +3,10 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#ifdef SBOX_PROCESS
+#if defined(SBOX_PROCESS)
 #include "sbox/process.hh"
+#elif defined(SBOX_LFI)
+#include "sbox/lfi.hh"
 #else
 #include "sbox/passthrough.hh"
 #endif
@@ -12,8 +14,10 @@
 #define BUF_SIZE 4096
 
 int main() {
-#ifdef SBOX_PROCESS
+#if defined(SBOX_PROCESS)
     sbox::Sandbox<sbox::Process> sandbox("./shm_sandbox");
+#elif defined(SBOX_LFI)
+    sbox::Sandbox<sbox::LFI> sandbox("./libshm.lfi");
 #else
     sbox::Sandbox<sbox::Passthrough> sandbox("./libshm.so");
 #endif

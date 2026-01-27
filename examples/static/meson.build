@@ -1,6 +1,7 @@
 backend = get_option('sbox_backend')
 
-if backend != 'process'
+# Static mode only works with passthrough (no dynamic loading needed)
+if backend == 'passthrough'
   static_main = executable('static_main',
     'main.cc',
     'lib_static.c',

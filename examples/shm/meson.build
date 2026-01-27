@@ -28,6 +28,25 @@ if backend == 'process'
     workdir: meson.current_build_dir(),
     depends: [shm_sandbox],
   )
+elif backend == 'lfi'
+  if lficc.found()
+    libshm_lfi = custom_target('libshm.lfi',
+      input: 'lib_shm.c',
+      output: 'libshm.lfi',
+      command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
+    )
+    shm_main = executable('shm_main',
+      'main.cc',
+      include_directories: [sbox_inc, lfi_inc],
+      cpp_args: ['-DSBOX_LFI'],
+      dependencies: [lfi_linux.as_link_whole()],
+      install: false,
+    )
+    test('shm', shm_main,
+      workdir: meson.current_build_dir(),
+      depends: [libshm_lfi],
+    )
+  endif
 else
   shm_main = executable('shm_main',
     'main.cc',

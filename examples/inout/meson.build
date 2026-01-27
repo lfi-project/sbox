@@ -28,6 +28,25 @@ if backend == 'process'
     workdir: meson.current_build_dir(),
     depends: [inout_sandbox],
   )
+elif backend == 'lfi'
+  if lficc.found()
+    libinout_lfi = custom_target('libinout.lfi',
+      input: 'lib_inout.c',
+      output: 'libinout.lfi',
+      command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
+    )
+    inout_main = executable('inout_main',
+      'main.cc',
+      include_directories: [sbox_inc, lfi_inc],
+      cpp_args: ['-DSBOX_LFI'],
+      dependencies: [lfi_linux.as_link_whole()],
+      install: false,
+    )
+    test('inout', inout_main,
+      workdir: meson.current_build_dir(),
+      depends: [libinout_lfi],
+    )
+  endif
 else
   inout_main = executable('inout_main',
     'main.cc',

@@ -2,9 +2,12 @@
 #include <ctime>
 #include <thread>
 
-#ifdef SBOX_PROCESS
+#if defined(SBOX_PROCESS)
 #include "sbox/process.hh"
 using SboxType = sbox::Sandbox<sbox::Process>;
+#elif defined(SBOX_LFI)
+#include "sbox/lfi.hh"
+using SboxType = sbox::Sandbox<sbox::LFI>;
 #else
 #include "sbox/passthrough.hh"
 using SboxType = sbox::Sandbox<sbox::Passthrough>;
@@ -25,9 +28,12 @@ static int double_value(int x) {
 }
 
 int main() {
-#ifdef SBOX_PROCESS
+#if defined(SBOX_PROCESS)
     SboxType sandbox("./bench_sandbox");
     const char* backend_name = "process";
+#elif defined(SBOX_LFI)
+    SboxType sandbox("./libbench.lfi");
+    const char* backend_name = "lfi";
 #else
     SboxType sandbox("./libbench.so");
     const char* backend_name = "passthrough";

@@ -1,14 +1,18 @@
 #include <cstdio>
 
-#ifdef SBOX_PROCESS
+#if defined(SBOX_PROCESS)
 #include "sbox/process.hh"
+#elif defined(SBOX_LFI)
+#include "sbox/lfi.hh"
 #else
 #include "sbox/passthrough.hh"
 #endif
 
 int main() {
-#ifdef SBOX_PROCESS
+#if defined(SBOX_PROCESS)
     sbox::Sandbox<sbox::Process> sandbox("./add_sandbox");
+#elif defined(SBOX_LFI)
+    sbox::Sandbox<sbox::LFI> sandbox("./libadd.lfi");
 #else
     sbox::Sandbox<sbox::Passthrough> sandbox("./libadd.so");
 #endif

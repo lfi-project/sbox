@@ -2,9 +2,12 @@
 #include <cassert>
 #include <pthread.h>
 
-#ifdef SBOX_PROCESS
+#if defined(SBOX_PROCESS)
 #include "sbox/process.hh"
 using SboxType = sbox::Sandbox<sbox::Process>;
+#elif defined(SBOX_LFI)
+#include "sbox/lfi.hh"
+using SboxType = sbox::Sandbox<sbox::LFI>;
 #else
 #include "sbox/passthrough.hh"
 using SboxType = sbox::Sandbox<sbox::Passthrough>;
@@ -48,8 +51,10 @@ static void* thread_fn(void* arg) {
 }
 
 int main() {
-#ifdef SBOX_PROCESS
+#if defined(SBOX_PROCESS)
     SboxType sb("./threads_sandbox");
+#elif defined(SBOX_LFI)
+    SboxType sb("./libthreads.lfi");
 #else
     SboxType sb("./libthreads.so");
 #endif

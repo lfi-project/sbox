@@ -26,6 +26,22 @@ if backend == 'process'
     dependencies: [ffi_dep, thread_dep],
     install: false,
   )
+elif backend == 'lfi'
+  if lficc.found()
+    libbench_lfi = custom_target('libbench.lfi',
+      input: 'lib_bench.c',
+      output: 'libbench.lfi',
+      command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
+      build_by_default: true,
+    )
+    bench_main = executable('bench_main',
+      'main.cc',
+      include_directories: [sbox_inc, lfi_inc],
+      cpp_args: ['-DSBOX_LFI'],
+      dependencies: [lfi_linux.as_link_whole(), thread_dep],
+      install: false,
+    )
+  endif
 else
   bench_main = executable('bench_main',
     'main.cc',

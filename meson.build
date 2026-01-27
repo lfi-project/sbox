@@ -60,6 +60,35 @@ test('process', test_process,
   depends: [test_sandbox],
 )
 
+# LFI backend
+lfi_subproj = subproject('lfi-runtime', default_options: ['enable_linux=true'])
+lfi_linux = lfi_subproj.get_variable('lfi_linux')
+lfi_inc = include_directories('subprojects/lfi-runtime/linux/include',
+                               'subprojects/lfi-runtime/core/include')
+
+# LFI test (only if lficc compiler is available)
+lficc_name = target_machine.cpu_family() == 'aarch64' ? 'aarch64_lfi-linux-musl-clang' : 'x86_64_lfi-linux-musl-clang'
+lficc = find_program(lficc_name, required: false)
+if lficc.found()
+  testlib_lfi = custom_target('testlib.lfi',
+    input: 'test/testlib.c',
+    output: 'testlib.lfi',
+    command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
+  )
+
+  test_lfi = executable('test_lfi',
+    'test/test_lfi.cc',
+    include_directories: [sbox_inc, lfi_inc],
+    dependencies: [lfi_linux.as_link_whole()],
+    install: false,
+  )
+
+  test('lfi', test_lfi,
+    workdir: meson.current_build_dir(),
+    depends: [testlib_lfi],
+  )
+endif
+
 # Examples
 subdir('examples/add')
 subdir('examples/callback')

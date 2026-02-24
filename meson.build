@@ -29,13 +29,28 @@ test('passthrough', test_passthrough,
   depends: [testlib],
 )
 
-# Process backend (requires pbox subproject)
-pbox_subproj = subproject('pbox')
-libpbox = pbox_subproj.get_variable('libpbox')
-libpbox_sandbox = pbox_subproj.get_variable('libpbox_sandbox')
-pbox_inc = pbox_subproj.get_variable('inc')
-ffi_dep = pbox_subproj.get_variable('ffi_dep')
-dl_dep = pbox_subproj.get_variable('dl_dep')
+# Process backend (pbox)
+libffi_subproj = subproject('libffi', default_options: ['tests=false', 'warning_level=0', 'default_library=static'])
+ffi_dep = libffi_subproj.get_variable('ffi_dep')
+dl_dep = meson.get_compiler('c').find_library('dl')
+
+pbox_inc = include_directories('src/pbox')
+
+libpbox = library('pbox',
+  'src/pbox/pbox.c',
+  'src/pbox/pbox_procmaps.c',
+  include_directories: pbox_inc,
+  dependencies: [ffi_dep],
+  install: false,
+)
+
+libpbox_sandbox = static_library('pbox_sandbox',
+  'src/pbox/pbox_sandbox.c',
+  'src/pbox/pbox_seccomp.c',
+  include_directories: pbox_inc,
+  dependencies: [ffi_dep, dl_dep],
+  install: false,
+)
 
 # Test sandbox executable (runs in child process)
 test_sandbox = executable('test_sandbox',
@@ -68,3 +83,12 @@ subdir('examples/shm')
 subdir('examples/threads')
 subdir('examples/inout')
 subdir('examples/static')
+
+# Pbox examples
+subdir('examples/pbox/add')
+subdir('examples/pbox/bench')
+subdir('examples/pbox/blocked')
+subdir('examples/pbox/callback')
+subdir('examples/pbox/identity')
+subdir('examples/pbox/shm')
+subdir('examples/pbox/threads')

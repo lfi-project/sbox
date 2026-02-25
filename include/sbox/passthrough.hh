@@ -2,11 +2,11 @@
 
 #include "sbox.hh"
 
-#include <cstdlib>
 #include <dlfcn.h>
 #include <sys/mman.h>
-#include <type_traits>
 #include <unistd.h>
+#include <cstdlib>
+#include <type_traits>
 
 namespace sbox {
 
@@ -56,7 +56,7 @@ private:
         if (!base_) {
             size_ = DEFAULT_SIZE;
             base_ = ::mmap(nullptr, size_, PROT_READ | PROT_WRITE,
-                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             if (base_ == MAP_FAILED) {
                 base_ = nullptr;
                 size_ = 0;
@@ -71,19 +71,21 @@ inline PassthroughArena& get_thread_arena() {
     return arena;
 }
 
-} // namespace detail
+}  // namespace detail
 
-// Passthrough CallContext - just returns pointers to host variables (zero overhead)
-// Defined before Sandbox since it doesn't need Sandbox to be complete
+// Passthrough CallContext - just returns pointers to host variables (zero
+// overhead) Defined before Sandbox since it doesn't need Sandbox to be complete
 template<>
 class CallContext<Passthrough> {
     Sandbox<Passthrough>* sandbox_;
 
 public:
-    explicit CallContext(Sandbox<Passthrough>& sb) : sandbox_(&sb) {}
+    explicit CallContext(Sandbox<Passthrough>& sb) : sandbox_(&sb) {
+    }
 
     // No-op for passthrough
-    void finalize() {}
+    void finalize() {
+    }
 
     // Just return pointer to host variable
     template<typename T>
@@ -110,7 +112,8 @@ public:
     explicit Sandbox(const char* library_path) {
         handle_ = dlopen(library_path, RTLD_NOW);
         if (!handle_) {
-            throw std::runtime_error(std::string("Failed to load library: ") + dlerror());
+            throw std::runtime_error(std::string("Failed to load library: ") +
+                                     dlerror());
         }
     }
 
@@ -129,13 +132,15 @@ public:
 
     // Movable
     Sandbox(Sandbox&& other) noexcept
-        : handle_(other.handle_), symbol_cache_(std::move(other.symbol_cache_)) {
+        : handle_(other.handle_),
+          symbol_cache_(std::move(other.symbol_cache_)) {
         other.handle_ = nullptr;
     }
 
     Sandbox& operator=(Sandbox&& other) noexcept {
         if (this != &other) {
-            if (handle_) dlclose(handle_);
+            if (handle_)
+                dlclose(handle_);
             handle_ = other.handle_;
             symbol_cache_ = std::move(other.symbol_cache_);
             other.handle_ = nullptr;
@@ -160,7 +165,8 @@ public:
     template<typename Sig, typename... Args>
     auto call(CallContext<Passthrough>& ctx, const char* name, Args... args)
         -> decltype(this->template call<Sig>(name, args...)) {
-        if constexpr (std::is_void_v<decltype(this->template call<Sig>(name, args...))>) {
+        if constexpr (std::is_void_v<decltype(this->template call<Sig>(
+                          name, args...))>) {
             this->template call<Sig>(name, args...);
             ctx.finalize();
         } else {
@@ -203,11 +209,12 @@ public:
     // Call via function pointer (used by FnHandle)
     template<typename Ret, typename... Args>
     Ret call_ptr(void* fn, Args... args) {
-        using FnPtr = Ret(*)(Args...);
+        using FnPtr = Ret (*)(Args...);
         return reinterpret_cast<FnPtr>(fn)(args...);
     }
 
-    // Memory allocation within the "sandbox" (just regular malloc for passthrough)
+    // Memory allocation within the "sandbox" (just regular malloc for
+    // passthrough)
     template<typename T>
     T* alloc(size_t count = 1) {
         return static_cast<T*>(std::malloc(sizeof(T) * count));
@@ -228,7 +235,8 @@ public:
     }
 
     // Memory mapping
-    void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset) {
+    void* mmap(void* addr, size_t length, int prot, int flags, int fd,
+               off_t offset) {
         return ::mmap(addr, length, prot, flags, fd, offset);
     }
 
@@ -238,7 +246,8 @@ public:
 
     // Identity-mapped memory (trivial for passthrough - all memory is shared)
     void* mmap_identity(size_t length, int prot) {
-        return ::mmap(nullptr, length, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        return ::mmap(nullptr, length, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1,
+                      0);
     }
 
     int munmap_identity(void* addr, size_t length) {
@@ -248,7 +257,8 @@ public:
     // Arena allocator for identity-mapped memory (per-thread)
     template<typename T>
     T* idmem_alloc(size_t count = 1) {
-        return static_cast<T*>(detail::get_thread_arena().alloc(sizeof(T) * count, alignof(T)));
+        return static_cast<T*>(
+            detail::get_thread_arena().alloc(sizeof(T) * count, alignof(T)));
     }
 
     void idmem_reset() {
@@ -282,14 +292,17 @@ public:
         return buf;
     }
 
-    // Register a callback (passthrough just returns the function pointer as void*)
+    // Register a callback (passthrough just returns the function pointer as
+    // void*)
     template<typename Fn>
     void* register_callback(Fn fn) {
         return reinterpret_cast<void*>(+fn);
     }
 
     // Escape hatch for advanced usage (returns dlopen handle)
-    void* native_handle() const { return handle_; }
+    void* native_handle() const {
+        return handle_;
+    }
 
 private:
     // Convert argument, using reinterpret_cast for pointer conversions
@@ -302,10 +315,11 @@ private:
         }
     }
 
-    // Helper to extract return type from signature and call with argument conversion
+    // Helper to extract return type from signature and call with argument
+    // conversion
     template<typename Ret, typename... Params, typename... Args>
-    Ret call_with_sig_impl(void* fn, Ret(*)(Params...), Args... args) {
-        using FnPtr = Ret(*)(Params...);
+    Ret call_with_sig_impl(void* fn, Ret (*)(Params...), Args... args) {
+        using FnPtr = Ret (*)(Params...);
         return reinterpret_cast<FnPtr>(fn)(convert_arg<Params>(args)...);
     }
 
@@ -335,4 +349,4 @@ private:
     std::mutex cache_mutex_;
 };
 
-} // namespace sbox
+}  // namespace sbox

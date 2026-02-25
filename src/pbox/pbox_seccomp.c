@@ -1,15 +1,15 @@
 #define _GNU_SOURCE
-#include <stddef.h>
-#include <stdint.h>
-#include <linux/seccomp.h>
-#include <linux/filter.h>
-#include <linux/audit.h>
-#include <sys/prctl.h>
-#include <sys/syscall.h>
+#include "pbox_seccomp.h"
+
 #include <asm/unistd.h>
 #include <errno.h>
-
-#include "pbox_seccomp.h"
+#include <linux/audit.h>
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <sys/prctl.h>
+#include <sys/syscall.h>
 
 // Architecture check value for x86-64
 #if defined(__x86_64__)
@@ -26,7 +26,7 @@
 
 // BPF macros for readability
 #define ALLOW SECCOMP_RET_ALLOW
-#define KILL  SECCOMP_RET_KILL_PROCESS
+#define KILL SECCOMP_RET_KILL_PROCESS
 #define ERRNO(e) (SECCOMP_RET_ERRNO | ((e) & SECCOMP_RET_DATA))
 
 // Load syscall number
@@ -42,13 +42,12 @@
     BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[n]))
 
 // Jump if equal
-#define BPF_SYSCALL_ALLOW(syscall_nr) \
+#define BPF_SYSCALL_ALLOW(syscall_nr)                      \
     BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, syscall_nr, 0, 1), \
-    BPF_STMT(BPF_RET | BPF_K, ALLOW)
+        BPF_STMT(BPF_RET | BPF_K, ALLOW)
 
 // Return action
-#define BPF_RETURN(action) \
-    BPF_STMT(BPF_RET | BPF_K, action)
+#define BPF_RETURN(action) BPF_STMT(BPF_RET | BPF_K, action)
 
 int pbox_install_seccomp(void) {
     struct sock_filter filter[] = {
@@ -97,7 +96,7 @@ int pbox_install_seccomp(void) {
         BPF_SYSCALL_ALLOW(__NR_exit),
         BPF_SYSCALL_ALLOW(__NR_exit_group),
 
-        // === Architecture/TLS ===
+    // === Architecture/TLS ===
 #ifdef __NR_arch_prctl
         BPF_SYSCALL_ALLOW(__NR_arch_prctl),
 #endif
@@ -142,7 +141,7 @@ int pbox_install_seccomp(void) {
     };
 
     struct sock_fprog prog = {
-        .len = (unsigned short)(sizeof(filter) / sizeof(filter[0])),
+        .len = (unsigned short) (sizeof(filter) / sizeof(filter[0])),
         .filter = filter,
     };
 
@@ -160,9 +159,9 @@ int pbox_install_seccomp(void) {
 }
 
 // Block clone syscall
-#define BPF_SYSCALL_BLOCK(syscall_nr) \
+#define BPF_SYSCALL_BLOCK(syscall_nr)                      \
     BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, syscall_nr, 0, 1), \
-    BPF_STMT(BPF_RET | BPF_K, ERRNO(ENOSYS))
+        BPF_STMT(BPF_RET | BPF_K, ERRNO(ENOSYS))
 
 int pbox_install_seccomp_worker(void) {
     // This filter only blocks clone/clone3, allowing everything else.
@@ -182,7 +181,7 @@ int pbox_install_seccomp_worker(void) {
     };
 
     struct sock_fprog prog = {
-        .len = (unsigned short)(sizeof(filter) / sizeof(filter[0])),
+        .len = (unsigned short) (sizeof(filter) / sizeof(filter[0])),
         .filter = filter,
     };
 

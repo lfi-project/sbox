@@ -1,12 +1,12 @@
 #pragma once
 
-#include <stdint.h>
-#include <stdatomic.h>
+#include "pbox.h"
+
 #include <linux/futex.h>
+#include <stdatomic.h>
+#include <stdint.h>
 #include <sys/syscall.h>
 #include <unistd.h>
-
-#include "pbox.h"
 
 // Channel states
 enum {
@@ -15,7 +15,7 @@ enum {
     PBOX_STATE_RESPONSE = 2,
     PBOX_STATE_EXIT = 3,
     PBOX_STATE_DEAD = 4,
-    PBOX_STATE_CALLBACK = 5     // Sandbox requesting a callback to host
+    PBOX_STATE_CALLBACK = 5  // Sandbox requesting a callback to host
 };
 
 // Request types
@@ -29,10 +29,10 @@ enum {
 
 #define PBOX_MAX_SYMBOL_NAME 256
 #define PBOX_SPIN_ITERATIONS 0
-#define PBOX_ARG_STORAGE     1024
-#define PBOX_RESULT_STORAGE  32
-#define PBOX_MEM_STORAGE     4096
-#define PBOX_MAX_CLOSURES    64
+#define PBOX_ARG_STORAGE 1024
+#define PBOX_RESULT_STORAGE 32
+#define PBOX_MEM_STORAGE 4096
+#define PBOX_MAX_CLOSURES 64
 #define PBOX_IDMEM_DEFAULT_SIZE (1 << 20)  // 1MB default identity region
 
 // Shared memory channel layout
@@ -82,19 +82,21 @@ struct PBoxChannel {
 #elif defined(__aarch64__) || defined(__arm__)
 #define PAUSE() __asm__ __volatile__("yield")
 #else
-#define PAUSE() do {} while (0)
+#define PAUSE() \
+    do {        \
+    } while (0)
 #endif
 
-static inline int pbox_futex_wait(atomic_int *addr, int expected) {
+static inline int pbox_futex_wait(atomic_int* addr, int expected) {
     return syscall(SYS_futex, addr, FUTEX_WAIT, expected, NULL, NULL, 0);
 }
 
-static inline int pbox_futex_wake(atomic_int *addr) {
+static inline int pbox_futex_wake(atomic_int* addr) {
     return syscall(SYS_futex, addr, FUTEX_WAKE, 1, NULL, NULL, 0);
 }
 
 // Hybrid spin-then-wait
-static inline void pbox_wait_for_state(atomic_int *addr, int expected) {
+static inline void pbox_wait_for_state(atomic_int* addr, int expected) {
     for (int i = 0; i < PBOX_SPIN_ITERATIONS; i++) {
         if (atomic_load(addr) == expected)
             return;
@@ -106,7 +108,7 @@ static inline void pbox_wait_for_state(atomic_int *addr, int expected) {
     }
 }
 
-static inline void pbox_set_state(atomic_int *addr, int value) {
+static inline void pbox_set_state(atomic_int* addr, int value) {
     atomic_store(addr, value);
     pbox_futex_wake(addr);
 }

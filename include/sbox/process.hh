@@ -7,10 +7,10 @@
 #endif
 
 #include <sys/types.h>
+#include <functional>
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include <functional>
 
 extern "C" {
 #include "pbox.h"
@@ -24,28 +24,75 @@ namespace detail {
 template<typename T>
 struct pbox_type;
 
-template<> struct pbox_type<void> { static constexpr PBoxType value = PBOX_TYPE_VOID; };
-template<> struct pbox_type<float> { static constexpr PBoxType value = PBOX_TYPE_FLOAT; };
-template<> struct pbox_type<double> { static constexpr PBoxType value = PBOX_TYPE_DOUBLE; };
-template<> struct pbox_type<char> { static constexpr PBoxType value = PBOX_TYPE_SINT8; };
-template<> struct pbox_type<signed char> { static constexpr PBoxType value = PBOX_TYPE_SINT8; };
-template<> struct pbox_type<unsigned char> { static constexpr PBoxType value = PBOX_TYPE_UINT8; };
-template<> struct pbox_type<short> { static constexpr PBoxType value = PBOX_TYPE_SINT16; };
-template<> struct pbox_type<unsigned short> { static constexpr PBoxType value = PBOX_TYPE_UINT16; };
-template<> struct pbox_type<int> { static constexpr PBoxType value = PBOX_TYPE_SINT32; };
-template<> struct pbox_type<unsigned int> { static constexpr PBoxType value = PBOX_TYPE_UINT32; };
-template<> struct pbox_type<long> { static constexpr PBoxType value = sizeof(long) == 8 ? PBOX_TYPE_SINT64 : PBOX_TYPE_SINT32; };
-template<> struct pbox_type<unsigned long> { static constexpr PBoxType value = sizeof(unsigned long) == 8 ? PBOX_TYPE_UINT64 : PBOX_TYPE_UINT32; };
-template<> struct pbox_type<long long> { static constexpr PBoxType value = PBOX_TYPE_SINT64; };
-template<> struct pbox_type<unsigned long long> { static constexpr PBoxType value = PBOX_TYPE_UINT64; };
+template<>
+struct pbox_type<void> {
+    static constexpr PBoxType value = PBOX_TYPE_VOID;
+};
+template<>
+struct pbox_type<float> {
+    static constexpr PBoxType value = PBOX_TYPE_FLOAT;
+};
+template<>
+struct pbox_type<double> {
+    static constexpr PBoxType value = PBOX_TYPE_DOUBLE;
+};
+template<>
+struct pbox_type<char> {
+    static constexpr PBoxType value = PBOX_TYPE_SINT8;
+};
+template<>
+struct pbox_type<signed char> {
+    static constexpr PBoxType value = PBOX_TYPE_SINT8;
+};
+template<>
+struct pbox_type<unsigned char> {
+    static constexpr PBoxType value = PBOX_TYPE_UINT8;
+};
+template<>
+struct pbox_type<short> {
+    static constexpr PBoxType value = PBOX_TYPE_SINT16;
+};
+template<>
+struct pbox_type<unsigned short> {
+    static constexpr PBoxType value = PBOX_TYPE_UINT16;
+};
+template<>
+struct pbox_type<int> {
+    static constexpr PBoxType value = PBOX_TYPE_SINT32;
+};
+template<>
+struct pbox_type<unsigned int> {
+    static constexpr PBoxType value = PBOX_TYPE_UINT32;
+};
+template<>
+struct pbox_type<long> {
+    static constexpr PBoxType value =
+        sizeof(long) == 8 ? PBOX_TYPE_SINT64 : PBOX_TYPE_SINT32;
+};
+template<>
+struct pbox_type<unsigned long> {
+    static constexpr PBoxType value =
+        sizeof(unsigned long) == 8 ? PBOX_TYPE_UINT64 : PBOX_TYPE_UINT32;
+};
+template<>
+struct pbox_type<long long> {
+    static constexpr PBoxType value = PBOX_TYPE_SINT64;
+};
+template<>
+struct pbox_type<unsigned long long> {
+    static constexpr PBoxType value = PBOX_TYPE_UINT64;
+};
 
 // All pointer types map to PBOX_TYPE_POINTER
-template<typename T> struct pbox_type<T*> { static constexpr PBoxType value = PBOX_TYPE_POINTER; };
+template<typename T>
+struct pbox_type<T*> {
+    static constexpr PBoxType value = PBOX_TYPE_POINTER;
+};
 
 template<typename T>
 inline constexpr PBoxType pbox_type_v = pbox_type<T>::value;
 
-} // namespace detail
+}  // namespace detail
 
 // Process backend - runs code in sandboxed child process via pbox
 template<>
@@ -76,7 +123,8 @@ public:
 
     Sandbox& operator=(Sandbox&& other) noexcept {
         if (this != &other) {
-            if (box_) pbox_destroy(box_);
+            if (box_)
+                pbox_destroy(box_);
             box_ = other.box_;
             symbol_cache_ = std::move(other.symbol_cache_);
             other.box_ = nullptr;
@@ -131,7 +179,8 @@ public:
     }
 
     // Memory mapping
-    void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset) {
+    void* mmap(void* addr, size_t length, int prot, int flags, int fd,
+               off_t offset) {
         return pbox_mmap(box_, addr, length, prot, flags, fd, offset);
     }
 
@@ -187,9 +236,10 @@ public:
 
     // Register a callback
     template<typename Ret, typename... Args>
-    void* register_callback(Ret(*fn)(Args...)) {
+    void* register_callback(Ret (*fn)(Args...)) {
         constexpr int nargs = sizeof...(Args);
-        static_assert(nargs <= PBOX_MAX_ARGS, "Too many callback arguments (max is PBOX_MAX_ARGS)");
+        static_assert(nargs <= PBOX_MAX_ARGS,
+                      "Too many callback arguments (max is PBOX_MAX_ARGS)");
         PBoxType arg_types[nargs > 0 ? nargs : 1];
         if constexpr (nargs > 0) {
             fill_arg_types<0, Args...>(arg_types);
@@ -200,11 +250,17 @@ public:
     }
 
     // Process-specific
-    pid_t pid() const { return pbox_pid(box_); }
-    bool alive() const { return pbox_alive(box_); }
+    pid_t pid() const {
+        return pbox_pid(box_);
+    }
+    bool alive() const {
+        return pbox_alive(box_);
+    }
 
     // Escape hatch for advanced usage (returns pbox handle)
-    PBox* native_handle() const { return box_; }
+    PBox* native_handle() const {
+        return box_;
+    }
 
 private:
     template<typename Sig, typename... Args>
@@ -214,7 +270,7 @@ private:
 
     // Extract return type and parameter types from signature
     template<typename Ret, typename... Params, typename... Args>
-    Ret call_with_sig_impl(void* fn, Ret(*)(Params...), Args... args) {
+    Ret call_with_sig_impl(void* fn, Ret (*)(Params...), Args... args) {
         return call_impl<Ret, Params...>(fn, convert_arg<Params>(args)...);
     }
 
@@ -237,7 +293,8 @@ private:
     template<typename Ret, typename... Args>
     Ret call_impl(void* fn, Args... args) {
         constexpr int nargs = sizeof...(Args);
-        static_assert(nargs <= PBOX_MAX_ARGS, "Too many arguments (max is PBOX_MAX_ARGS)");
+        static_assert(nargs <= PBOX_MAX_ARGS,
+                      "Too many arguments (max is PBOX_MAX_ARGS)");
 
         PBoxType arg_types[nargs > 0 ? nargs : 1];
         void* arg_ptrs[nargs > 0 ? nargs : 1];
@@ -271,7 +328,8 @@ private:
 
     // Fill argument pointer array
     template<size_t I>
-    void fill_arg_ptrs(void**) {}
+    void fill_arg_ptrs(void**) {
+    }
 
     template<size_t I, typename T, typename... Rest>
     void fill_arg_ptrs(void** ptrs, T& arg, Rest&... rest) {
@@ -310,7 +368,8 @@ class CallContext<Process> {
     bool finalized_ = false;
 
 public:
-    explicit CallContext(Sandbox<Process>& sb) : sandbox_(&sb) {}
+    explicit CallContext(Sandbox<Process>& sb) : sandbox_(&sb) {
+    }
 
     ~CallContext() {
         finalize();
@@ -322,7 +381,8 @@ public:
 
     // Execute all copy-backs (idempotent)
     void finalize() {
-        if (finalized_) return;
+        if (finalized_)
+            return;
         finalized_ = true;
         for (auto& cb : copybacks_) {
             cb();
@@ -334,9 +394,8 @@ public:
     T* out(T& host_ref) {
         T* idmem_ptr = sandbox_->template idmem_alloc<T>();
         T* host_ptr = &host_ref;
-        copybacks_.push_back([host_ptr, idmem_ptr]() {
-            *host_ptr = *idmem_ptr;
-        });
+        copybacks_.push_back(
+            [host_ptr, idmem_ptr]() { *host_ptr = *idmem_ptr; });
         return idmem_ptr;
     }
 
@@ -354,9 +413,8 @@ public:
         T* idmem_ptr = sandbox_->template idmem_alloc<T>();
         T* host_ptr = &host_ref;
         *idmem_ptr = host_ref;
-        copybacks_.push_back([host_ptr, idmem_ptr]() {
-            *host_ptr = *idmem_ptr;
-        });
+        copybacks_.push_back(
+            [host_ptr, idmem_ptr]() { *host_ptr = *idmem_ptr; });
         return idmem_ptr;
     }
 };
@@ -367,8 +425,10 @@ inline CallContext<Process> Sandbox<Process>::context() {
 }
 
 template<typename Sig, typename... Args>
-auto Sandbox<Process>::call(CallContext<Process>& ctx, const char* name, Args... args) {
-    if constexpr (std::is_void_v<decltype(this->template call<Sig>(name, args...))>) {
+auto Sandbox<Process>::call(CallContext<Process>& ctx, const char* name,
+                            Args... args) {
+    if constexpr (std::is_void_v<decltype(this->template call<Sig>(name,
+                                                                   args...))>) {
         this->template call<Sig>(name, args...);
         ctx.finalize();
     } else {
@@ -378,4 +438,4 @@ auto Sandbox<Process>::call(CallContext<Process>& ctx, const char* name, Args...
     }
 }
 
-} // namespace sbox
+}  // namespace sbox

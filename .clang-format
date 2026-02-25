@@ -1,0 +1,1 @@
+{BasedOnStyle: Chromium, IndentWidth: 4, SpaceAfterCStyleCast: true, AccessModifierOffset: -4, IndentAccessModifiers: false, SpaceAfterTemplateKeyword: false, AllowShortFunctionsOnASingleLine: None, BinPackArguments: true, BinPackParameters: true, AllowAllArgumentsOnNextLine: false, AllowAllParametersOfDeclarationOnNextLine: false}

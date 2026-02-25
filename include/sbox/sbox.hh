@@ -2,10 +2,10 @@
 
 #include <cstddef>
 #include <cstring>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
-#include <mutex>
 
 // Macro to reference a function - expands differently based on backend
 #ifdef SBOX_STATIC
@@ -35,7 +35,8 @@ template<typename Backend, typename Ret, typename... Args>
 class FnHandle<Backend, Ret(Args...)> {
 public:
     FnHandle(Sandbox<Backend>& sandbox, void* fn_ptr)
-        : sandbox_(&sandbox), fn_ptr_(fn_ptr) {}
+        : sandbox_(&sandbox), fn_ptr_(fn_ptr) {
+    }
 
     Ret operator()(Args... args) const {
         return sandbox_->template call_ptr<Ret, Args...>(fn_ptr_, args...);
@@ -46,4 +47,4 @@ private:
     void* fn_ptr_;
 };
 
-} // namespace sbox
+}  // namespace sbox

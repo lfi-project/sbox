@@ -1,8 +1,8 @@
+#include "sbox/process.hh"
+
+#include <cassert>
 #include <cstdio>
 #include <cstring>
-#include <cassert>
-
-#include "sbox/process.hh"
 
 void my_callback(int x) {
     printf("Callback called with: %d\n", x);
@@ -53,7 +53,7 @@ int main() {
 
     // Test callback
     void* cb = sandbox.register_callback(my_callback);
-    sandbox.call<void(void(*)(int))>("set_callback", cb);
+    sandbox.call<void(void (*)(int))>("set_callback", cb);
     sandbox.call<void(int)>("trigger_callback", 123);
 
     printf("\nAll tests passed!\n");

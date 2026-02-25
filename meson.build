@@ -16,18 +16,8 @@ testlib = shared_library('testlib',
   install: false,
 )
 
-# Passthrough test
-test_passthrough = executable('test_passthrough',
-  'test/test_passthrough.cc',
-  include_directories: sbox_inc,
-  dependencies: [dependency('dl')],
-  install: false,
-)
-
-test('passthrough', test_passthrough,
-  workdir: meson.current_build_dir(),
-  depends: [testlib],
-)
+# Test include directory (for test_helpers.hh)
+test_inc = include_directories('test')
 
 # Process backend (pbox)
 libffi_subproj = subproject('libffi', default_options: ['tests=false', 'warning_level=0', 'default_library=static'])
@@ -61,18 +51,82 @@ test_sandbox = executable('test_sandbox',
   install: false,
 )
 
-# Process test
-test_process = executable('test_process',
-  'test/test_process.cc',
-  include_directories: [sbox_inc, pbox_inc],
-  link_with: libpbox,
-  dependencies: [ffi_dep],
+# Shared test categories (each has a .inc.cc included by per-backend drivers)
+test_categories = ['arithmetic', 'fn_handles', 'misc', 'structs', 'pointers', 'memory', 'strings', 'callbacks']
+
+dl_dep = dependency('dl')
+
+foreach cat : test_categories
+  exe = executable('test_passthrough_' + cat,
+    'test/test_passthrough_' + cat + '.cc',
+    include_directories: [sbox_inc, test_inc],
+    dependencies: [dl_dep],
+    install: false,
+  )
+  test('passthrough_' + cat, exe,
+    workdir: meson.current_build_dir(),
+    depends: [testlib],
+  )
+endforeach
+
+foreach cat : test_categories
+  exe = executable('test_process_' + cat,
+    'test/test_process_' + cat + '.cc',
+    include_directories: [sbox_inc, pbox_inc, test_inc],
+    link_with: libpbox,
+    dependencies: [ffi_dep],
+    install: false,
+  )
+  test('process_' + cat, exe,
+    workdir: meson.current_build_dir(),
+    depends: [test_sandbox],
+  )
+endforeach
+
+# Passthrough-specific tests
+passthrough_extra_tests = ['multi', 'reentrant']
+
+foreach t : passthrough_extra_tests
+  exe = executable('test_passthrough_' + t,
+    'test/test_passthrough_' + t + '.cc',
+    include_directories: [sbox_inc, test_inc],
+    dependencies: [dl_dep],
+    install: false,
+  )
+  test('passthrough_' + t, exe,
+    workdir: meson.current_build_dir(),
+    depends: [testlib],
+  )
+endforeach
+
+# Process-specific tests
+process_extra_tests = ['specific', 'multi']
+
+foreach t : process_extra_tests
+  exe = executable('test_process_' + t,
+    'test/test_process_' + t + '.cc',
+    include_directories: [sbox_inc, pbox_inc, test_inc],
+    link_with: libpbox,
+    dependencies: [ffi_dep],
+    install: false,
+  )
+  test('process_' + t, exe,
+    workdir: meson.current_build_dir(),
+    depends: [test_sandbox],
+  )
+endforeach
+
+# Threading test
+thread_dep = dependency('threads')
+test_threads = executable('test_threads',
+  'test/test_threads.cc',
+  include_directories: [sbox_inc, test_inc],
+  dependencies: [dl_dep, thread_dep],
   install: false,
 )
-
-test('process', test_process,
+test('threads', test_threads,
   workdir: meson.current_build_dir(),
-  depends: [test_sandbox],
+  depends: [testlib],
 )
 
 # Examples

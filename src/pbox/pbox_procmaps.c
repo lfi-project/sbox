@@ -2,6 +2,7 @@
 
 #include "pbox_procmaps.h"
 
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,7 +28,7 @@ static uintptr_t* parse_proc_maps(pid_t pid, size_t* count) {
     char line[512];
     while (fgets(line, sizeof(line), f)) {
         uintptr_t start, end;
-        if (sscanf(line, "%lx-%lx", &start, &end) == 2) {
+        if (sscanf(line, "%" SCNxPTR "-%" SCNxPTR, &start, &end) == 2) {
             if (n >= cap) {
                 cap *= 2;
                 uintptr_t* new_regions =

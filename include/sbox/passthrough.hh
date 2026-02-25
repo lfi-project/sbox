@@ -5,6 +5,7 @@
 #include <dlfcn.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <cstdio>
 #include <cstdlib>
 #include <type_traits>
 
@@ -111,10 +112,6 @@ public:
     // Dynamic mode - loads library via dlopen
     explicit Sandbox(const char* library_path) {
         handle_ = dlopen(library_path, RTLD_NOW);
-        if (!handle_) {
-            throw std::runtime_error(std::string("Failed to load library: ") +
-                                     dlerror());
-        }
     }
 
     // Static mode - no library loading, use direct function pointers
@@ -130,28 +127,19 @@ public:
     Sandbox(const Sandbox&) = delete;
     Sandbox& operator=(const Sandbox&) = delete;
 
-    // Movable
-    Sandbox(Sandbox&& other) noexcept
-        : handle_(other.handle_),
-          symbol_cache_(std::move(other.symbol_cache_)) {
-        other.handle_ = nullptr;
-    }
+    // Non-movable
+    Sandbox(Sandbox&&) = delete;
+    Sandbox& operator=(Sandbox&&) = delete;
 
-    Sandbox& operator=(Sandbox&& other) noexcept {
-        if (this != &other) {
-            if (handle_)
-                dlclose(handle_);
-            handle_ = other.handle_;
-            symbol_cache_ = std::move(other.symbol_cache_);
-            other.handle_ = nullptr;
-        }
-        return *this;
-    }
-
-    // Call a function by name (dynamic mode)
+    // Call a function by name (dynamic mode).
+    // 'name' must be a string literal (pointer is cached directly).
     template<typename Sig, typename... Args>
     auto call(const char* name, Args... args) {
         void* fn = lookup(name);
+        if (!fn) {
+            fprintf(stderr, "sbox: symbol not found: %s\n", name);
+            abort();
+        }
         return call_ptr_sig<Sig>(fn, args...);
     }
 
@@ -194,7 +182,8 @@ public:
         return CallContext<Passthrough>(*this);
     }
 
-    // Get a function handle for repeated calls (dynamic mode)
+    // Get a function handle for repeated calls (dynamic mode).
+    // 'name' must be a string literal (pointer is cached directly).
     template<typename Sig>
     FnHandle<Passthrough, Sig> fn(const char* name) {
         return FnHandle<Passthrough, Sig>(*this, lookup(name));
@@ -288,6 +277,8 @@ public:
     char* copy_string(const char* s) {
         size_t len = std::strlen(s) + 1;
         char* buf = alloc<char>(len);
+        if (!buf)
+            return nullptr;
         copy_to(buf, s, len);
         return buf;
     }
@@ -337,10 +328,9 @@ private:
         }
 
         void* sym = dlsym(handle_, name);
-        if (!sym) {
-            throw std::runtime_error(std::string("Symbol not found: ") + name);
+        if (sym) {
+            symbol_cache_[name] = sym;
         }
-        symbol_cache_[name] = sym;
         return sym;
     }
 

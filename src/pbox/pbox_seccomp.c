@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <linux/audit.h>
 #include <linux/filter.h>
+#include <linux/net.h>
 #include <linux/seccomp.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -71,7 +72,12 @@ int pbox_install_seccomp(void) {
         BPF_SYSCALL_ALLOW(__NR_close),
         BPF_SYSCALL_ALLOW(__NR_recvmsg),
 #ifdef __NR_socketcall
-        BPF_SYSCALL_ALLOW(__NR_socketcall),
+        // Only allow socketcall(SYS_RECVMSG) for fd passing on 32-bit.
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socketcall, 0, 3),
+        BPF_LOAD_ARG(0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_RECVMSG, 0, 1),
+        BPF_RETURN(ALLOW),
+        BPF_LOAD_SYSCALL_NR,
 #endif
 
         // === Threading (futex) ===
@@ -100,7 +106,13 @@ int pbox_install_seccomp(void) {
 #ifdef __NR_arch_prctl
         BPF_SYSCALL_ALLOW(__NR_arch_prctl),
 #endif
-        BPF_SYSCALL_ALLOW(__NR_prctl),
+        // Only allow prctl(PR_SET_SECCOMP) for worker seccomp installation.
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_prctl, 0, 3),
+        BPF_LOAD_ARG(0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, PR_SET_SECCOMP, 0, 1),
+        BPF_RETURN(ALLOW),
+        // Reload syscall number after arg check above.
+        BPF_LOAD_SYSCALL_NR,
 
         // === Safe information queries ===
         BPF_SYSCALL_ALLOW(__NR_getpid),

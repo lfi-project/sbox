@@ -6,6 +6,7 @@
 #include "pbox_procmaps.h"
 
 #include <assert.h>
+#include <fcntl.h>
 #include <ffi.h>
 #include <pthread.h>
 #include <signal.h>
@@ -151,7 +152,7 @@ static void* pbox_dlsym_control(struct PBox* box, const char* symbol);
 // Create a new worker channel (must hold channel_lock)
 static struct PBoxThreadChannel* create_channel_locked(struct PBox* box) {
     // Create shared memory for new channel
-    int shm_fd = memfd_create("pbox_worker", 0);
+    int shm_fd = memfd_create("pbox_worker", MFD_CLOEXEC);
     if (shm_fd < 0) {
         return NULL;
     }
@@ -290,7 +291,7 @@ struct PBox* pbox_create(const char* sandbox_executable) {
     }
 
     // Create anonymous shared memory for control channel.
-    box->control_shm_fd = memfd_create("pbox_control", 0);
+    box->control_shm_fd = memfd_create("pbox_control", MFD_CLOEXEC);
     if (box->control_shm_fd < 0) {
         perror("pbox: memfd_create");
         pthread_mutex_destroy(&box->channel_lock);
@@ -327,7 +328,7 @@ struct PBox* pbox_create(const char* sandbox_executable) {
 
     // Create socket pair for fd passing.
     int sock_fds[2];
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sock_fds) < 0) {
+    if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sock_fds) < 0) {
         perror("pbox: socketpair");
         munmap(box->control_channel, sizeof(struct PBoxChannel));
         close(box->control_shm_fd);
@@ -350,8 +351,13 @@ struct PBox* pbox_create(const char* sandbox_executable) {
     }
 
     if (box->pid == 0) {
-        // Child process
-        close(sock_fds[0]);  // Close parent's end
+        // Child process.
+        // Mark all FDs >= 3 as close-on-exec to prevent leaking host FDs,
+        // then clear close-on-exec on the two FDs we need to pass.
+        close_range(3, ~0U, CLOSE_RANGE_CLOEXEC);
+        fcntl(box->control_shm_fd, F_SETFD, 0);
+        fcntl(sock_fds[1], F_SETFD, 0);
+
         char fd_str[16], sock_str[16];
         snprintf(fd_str, sizeof(fd_str), "%d", box->control_shm_fd);
         snprintf(sock_str, sizeof(sock_str), "%d", sock_fds[1]);
@@ -538,10 +544,19 @@ static void pbox_dispatch_callback(struct PBox* box, struct PBoxChannel* ch) {
 
     struct PBoxCallback* cb = &box->callbacks[id];
 
-    // Unpack arguments from channel
+    // Unpack arguments from channel.
+    // Offsets are sandbox-controlled; bounds-check to prevent out-of-bounds
+    // reads on the host. Callback functions are still responsible for
+    // validating argument values (e.g., pointers) from the untrusted sandbox.
     void* arg_values[PBOX_MAX_ARGS];
-    for (int i = 0; i < cb->nargs; i++)
+    for (int i = 0; i < cb->nargs; i++) {
+        if (ch->args[i] >= PBOX_ARG_STORAGE) {
+            fprintf(stderr, "pbox: sandbox violated callback protocol\n");
+            kill(box->pid, SIGKILL);
+            return;
+        }
         arg_values[i] = &ch->arg_storage[ch->args[i]];
+    }
 
     // Call host function using cached cif
     ffi_call(&cb->cif, cb->func_ptr, ch->result_storage, arg_values);
@@ -575,15 +590,22 @@ void pbox_call(struct PBox* box, void* func_addr, enum PBoxType ret_type,
     if (!ch)
         return;
 
+    // nargs should be statically enforced by the C++ wrapper (static_assert).
+    assert(nargs <= PBOX_MAX_ARGS);
+
     ch->request_type = PBOX_REQ_CALL;
     ch->func_addr = (uintptr_t) func_addr;
     ch->nargs = nargs;
     ch->ret_type = ret_type;
 
-    // Pack arguments into arg_storage
+    // Pack arguments into arg_storage.
+    // Cannot overflow with current max types (8 * 8 = 64 bytes << 1024).
+    _Static_assert(PBOX_MAX_ARGS * sizeof(uint64_t) <= PBOX_ARG_STORAGE,
+                   "arg_storage too small for max args");
     size_t offset = 0;
     for (int i = 0; i < nargs; i++) {
         size_t size = pbox_type_size(arg_types[i]);
+        assert(offset + size <= PBOX_ARG_STORAGE);
         ch->arg_types[i] = arg_types[i];
         ch->args[i] = offset;
         memcpy(&ch->arg_storage[offset], args[i], size);
@@ -732,6 +754,9 @@ void* pbox_register_callback(struct PBox* box, void* host_func,
     if (box->callback_count >= PBOX_MAX_CALLBACKS)
         return NULL;
 
+    // nargs should be statically enforced by the C++ wrapper (static_assert).
+    assert(nargs <= PBOX_MAX_ARGS);
+
     int id = box->callback_count++;
     struct PBoxCallback* cb = &box->callbacks[id];
     cb->func_ptr = host_func;
@@ -816,7 +841,7 @@ void* pbox_mmap_identity(struct PBox* box, size_t length, int prot) {
         return NULL;
 
     // Create anonymous shared memory
-    int memfd = memfd_create("pbox_shared", 0);
+    int memfd = memfd_create("pbox_shared", MFD_CLOEXEC);
     if (memfd < 0)
         return NULL;
 

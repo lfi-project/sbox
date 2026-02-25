@@ -7,7 +7,10 @@
 #endif
 
 #include <sys/types.h>
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -100,9 +103,6 @@ class Sandbox<Process> {
 public:
     explicit Sandbox(const char* sandbox_executable) {
         box_ = pbox_create(sandbox_executable);
-        if (!box_) {
-            throw std::runtime_error("Failed to create sandbox");
-        }
     }
 
     ~Sandbox() {
@@ -115,27 +115,19 @@ public:
     Sandbox(const Sandbox&) = delete;
     Sandbox& operator=(const Sandbox&) = delete;
 
-    // Movable
-    Sandbox(Sandbox&& other) noexcept
-        : box_(other.box_), symbol_cache_(std::move(other.symbol_cache_)) {
-        other.box_ = nullptr;
-    }
+    // Non-movable
+    Sandbox(Sandbox&&) = delete;
+    Sandbox& operator=(Sandbox&&) = delete;
 
-    Sandbox& operator=(Sandbox&& other) noexcept {
-        if (this != &other) {
-            if (box_)
-                pbox_destroy(box_);
-            box_ = other.box_;
-            symbol_cache_ = std::move(other.symbol_cache_);
-            other.box_ = nullptr;
-        }
-        return *this;
-    }
-
-    // Call a function by name
+    // Call a function by name.
+    // 'name' must be a string literal (pointer is cached directly).
     template<typename Sig, typename... Args>
     auto call(const char* name, Args... args) {
         void* fn = lookup(name);
+        if (!fn) {
+            fprintf(stderr, "sbox: symbol not found: %s\n", name);
+            abort();
+        }
         return call_ptr_sig<Sig>(fn, args...);
     }
 
@@ -146,7 +138,8 @@ public:
     // Create a call context (defined after CallContext)
     inline CallContext<Process> context();
 
-    // Get a function handle for repeated calls
+    // Get a function handle for repeated calls.
+    // 'name' must be a string literal (pointer is cached directly).
     template<typename Sig>
     FnHandle<Process, Sig> fn(const char* name) {
         return FnHandle<Process, Sig>(*this, lookup(name));
@@ -230,6 +223,8 @@ public:
     char* copy_string(const char* s) {
         size_t len = std::strlen(s) + 1;
         char* buf = alloc<char>(len);
+        if (!buf)
+            return nullptr;
         copy_to(buf, s, len);
         return buf;
     }
@@ -348,10 +343,9 @@ private:
         }
 
         void* sym = pbox_dlsym(box_, name);
-        if (!sym) {
-            throw std::runtime_error(std::string("Symbol not found: ") + name);
+        if (sym) {
+            symbol_cache_[name] = sym;
         }
-        symbol_cache_[name] = sym;
         return sym;
     }
 
@@ -393,6 +387,8 @@ public:
     template<typename T>
     T* out(T& host_ref) {
         T* idmem_ptr = sandbox_->template idmem_alloc<T>();
+        if (!idmem_ptr)
+            throw std::runtime_error("idmem_alloc failed");
         T* host_ptr = &host_ref;
         copybacks_.push_back(
             [host_ptr, idmem_ptr]() { *host_ptr = *idmem_ptr; });
@@ -403,6 +399,8 @@ public:
     template<typename T>
     const T* in(const T& host_ref) {
         T* idmem_ptr = sandbox_->template idmem_alloc<T>();
+        if (!idmem_ptr)
+            throw std::runtime_error("idmem_alloc failed");
         *idmem_ptr = host_ref;
         return idmem_ptr;
     }
@@ -411,6 +409,8 @@ public:
     template<typename T>
     T* inout(T& host_ref) {
         T* idmem_ptr = sandbox_->template idmem_alloc<T>();
+        if (!idmem_ptr)
+            throw std::runtime_error("idmem_alloc failed");
         T* host_ptr = &host_ref;
         *idmem_ptr = host_ref;
         copybacks_.push_back(

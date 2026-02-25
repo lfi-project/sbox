@@ -3,8 +3,6 @@
 #include <cstddef>
 #include <cstring>
 #include <mutex>
-#include <stdexcept>
-#include <string>
 #include <unordered_map>
 
 // Macro to reference a function - expands differently based on backend

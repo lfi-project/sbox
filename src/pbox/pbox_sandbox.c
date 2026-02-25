@@ -137,10 +137,13 @@ static bool do_ffi_call(struct PBoxChannel* ch) {
     ffi_type* arg_types[PBOX_MAX_ARGS];
     void* arg_values[PBOX_MAX_ARGS];
 
-    // Build argument type array and value pointers
+    // Build argument type array and value pointers.
+    // Offsets are packed by the host; cannot overflow with current max types.
+    _Static_assert(PBOX_MAX_ARGS * sizeof(uint64_t) <= PBOX_ARG_STORAGE,
+                   "arg_storage too small for max args");
     for (int i = 0; i < ch->nargs; i++) {
         arg_types[i] = get_ffi_type(ch->arg_types[i]);
-        // TODO: bounds check this.
+        assert(ch->args[i] < PBOX_ARG_STORAGE);
         arg_values[i] = &ch->arg_storage[ch->args[i]];
     }
 

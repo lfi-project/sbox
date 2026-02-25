@@ -77,14 +77,16 @@ struct PBox {
     void* sym_close;
 
     // Fd mapping: direct table for small fds, dynamic vector for large fds
+    pthread_mutex_t fd_lock;
     int fd_direct[PBOX_FD_DIRECT_MAX];  // -1 = not mapped
     struct PBoxFdEntry* fd_overflow;
     size_t fd_overflow_count;
     size_t fd_overflow_cap;
 
     // Callback registry
+    pthread_mutex_t callback_lock;
     struct PBoxCallback callbacks[PBOX_MAX_CALLBACKS];
-    int callback_count;
+    atomic_int callback_count;
 
     // Set when intentionally destroying (suppresses signal message)
     atomic_int destroying;
@@ -260,7 +262,14 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         return NULL;
     }
 
+    atomic_init(&box->destroying, 0);
+
     // Initialize fd mapping.
+    if (pthread_mutex_init(&box->fd_lock, NULL) != 0) {
+        perror("pbox: pthread_mutex_init");
+        free(box);
+        return NULL;
+    }
     for (int i = 0; i < PBOX_FD_DIRECT_MAX; i++)
         box->fd_direct[i] = -1;
     box->fd_overflow = NULL;
@@ -268,7 +277,13 @@ struct PBox* pbox_create(const char* sandbox_executable) {
     box->fd_overflow_cap = 0;
 
     // Initialize callback registry.
-    box->callback_count = 0;
+    if (pthread_mutex_init(&box->callback_lock, NULL) != 0) {
+        perror("pbox: pthread_mutex_init");
+        pthread_mutex_destroy(&box->fd_lock);
+        free(box);
+        return NULL;
+    }
+    atomic_init(&box->callback_count, 0);
 
     // Initialize channel list.
     box->channels = NULL;
@@ -278,6 +293,8 @@ struct PBox* pbox_create(const char* sandbox_executable) {
     // Initialize TLS key for per-thread channels.
     if (pthread_key_create(&box->channel_key, channel_destructor) != 0) {
         perror("pbox: pthread_key_create");
+        pthread_mutex_destroy(&box->callback_lock);
+        pthread_mutex_destroy(&box->fd_lock);
         free(box);
         return NULL;
     }
@@ -286,6 +303,8 @@ struct PBox* pbox_create(const char* sandbox_executable) {
     if (pthread_mutex_init(&box->channel_lock, NULL) != 0) {
         perror("pbox: pthread_mutex_init");
         pthread_key_delete(box->channel_key);
+        pthread_mutex_destroy(&box->callback_lock);
+        pthread_mutex_destroy(&box->fd_lock);
         free(box);
         return NULL;
     }
@@ -295,6 +314,8 @@ struct PBox* pbox_create(const char* sandbox_executable) {
     if (box->control_shm_fd < 0) {
         perror("pbox: memfd_create");
         pthread_mutex_destroy(&box->channel_lock);
+        pthread_mutex_destroy(&box->callback_lock);
+        pthread_mutex_destroy(&box->fd_lock);
         pthread_key_delete(box->channel_key);
         free(box);
         return NULL;
@@ -305,6 +326,8 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         perror("pbox: ftruncate");
         close(box->control_shm_fd);
         pthread_mutex_destroy(&box->channel_lock);
+        pthread_mutex_destroy(&box->callback_lock);
+        pthread_mutex_destroy(&box->fd_lock);
         pthread_key_delete(box->channel_key);
         free(box);
         return NULL;
@@ -318,6 +341,8 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         perror("pbox: mmap");
         close(box->control_shm_fd);
         pthread_mutex_destroy(&box->channel_lock);
+        pthread_mutex_destroy(&box->callback_lock);
+        pthread_mutex_destroy(&box->fd_lock);
         pthread_key_delete(box->channel_key);
         free(box);
         return NULL;
@@ -333,6 +358,8 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         munmap(box->control_channel, sizeof(struct PBoxChannel));
         close(box->control_shm_fd);
         pthread_mutex_destroy(&box->channel_lock);
+        pthread_mutex_destroy(&box->callback_lock);
+        pthread_mutex_destroy(&box->fd_lock);
         pthread_key_delete(box->channel_key);
         free(box);
         return NULL;
@@ -345,6 +372,8 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         munmap(box->control_channel, sizeof(struct PBoxChannel));
         close(box->control_shm_fd);
         pthread_mutex_destroy(&box->channel_lock);
+        pthread_mutex_destroy(&box->callback_lock);
+        pthread_mutex_destroy(&box->fd_lock);
         pthread_key_delete(box->channel_key);
         free(box);
         return NULL;
@@ -380,6 +409,8 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         close(box->control_shm_fd);
         close(box->sock_fd);
         pthread_mutex_destroy(&box->channel_lock);
+        pthread_mutex_destroy(&box->callback_lock);
+        pthread_mutex_destroy(&box->fd_lock);
         pthread_key_delete(box->channel_key);
         free(box);
         return NULL;
@@ -429,6 +460,8 @@ void pbox_destroy(struct PBox* box) {
     close(box->sock_fd);
 
     pthread_mutex_destroy(&box->channel_lock);
+    pthread_mutex_destroy(&box->callback_lock);
+    pthread_mutex_destroy(&box->fd_lock);
     pthread_key_delete(box->channel_key);
 
     free(box->fd_overflow);
@@ -539,7 +572,7 @@ static ffi_type* pbox_get_ffi_type(enum PBoxType type) {
 // Dispatch a callback request from sandbox to host
 static void pbox_dispatch_callback(struct PBox* box, struct PBoxChannel* ch) {
     int id = ch->callback_id;
-    if (id < 0 || id >= box->callback_count)
+    if (id < 0 || id >= atomic_load(&box->callback_count))
         return;
 
     struct PBoxCallback* cb = &box->callbacks[id];
@@ -550,12 +583,15 @@ static void pbox_dispatch_callback(struct PBox* box, struct PBoxChannel* ch) {
     // validating argument values (e.g., pointers) from the untrusted sandbox.
     void* arg_values[PBOX_MAX_ARGS];
     for (int i = 0; i < cb->nargs; i++) {
-        if (ch->args[i] >= PBOX_ARG_STORAGE) {
+        // Read offset once into a local to prevent TOCTOU -- the sandbox
+        // could race to change ch->args[i] between the bounds check and use.
+        uint64_t arg_offset = ch->args[i];
+        if (arg_offset >= PBOX_ARG_STORAGE) {
             fprintf(stderr, "pbox: sandbox violated callback protocol\n");
             kill(box->pid, SIGKILL);
             return;
         }
-        arg_values[i] = &ch->arg_storage[ch->args[i]];
+        arg_values[i] = &ch->arg_storage[arg_offset];
     }
 
     // Call host function using cached cif
@@ -694,21 +730,28 @@ int pbox_send_fd(struct PBox* box, int fd) {
     if (fd < 0)
         return fd;
 
+    pthread_mutex_lock(&box->fd_lock);
+
     // Return cached sandbox fd if already sent
     int cached = pbox_lookup_fd(box, fd);
-    if (cached >= 0)
+    if (cached >= 0) {
+        pthread_mutex_unlock(&box->fd_lock);
         return cached;
+    }
 
     // Get thread-local channel
     struct PBoxChannel* ch = get_or_create_channel(box);
-    if (!ch)
+    if (!ch) {
+        pthread_mutex_unlock(&box->fd_lock);
         return -1;
+    }
 
     // Send and cache
     int sandbox_fd = pbox_send_fd_on_channel(box, ch, fd);
     if (sandbox_fd >= 0)
         pbox_cache_fd(box, fd, sandbox_fd);
 
+    pthread_mutex_unlock(&box->fd_lock);
     return sandbox_fd;
 }
 
@@ -742,8 +785,11 @@ int pbox_close(struct PBox* box, int sandbox_fd) {
               &result);
 
     // Invalidate cache entry
-    if (result == 0)
+    if (result == 0) {
+        pthread_mutex_lock(&box->fd_lock);
         pbox_uncache_fd(box, sandbox_fd);
+        pthread_mutex_unlock(&box->fd_lock);
+    }
 
     return result;
 }
@@ -751,13 +797,20 @@ int pbox_close(struct PBox* box, int sandbox_fd) {
 void* pbox_register_callback(struct PBox* box, void* host_func,
                              enum PBoxType ret_type, int nargs,
                              const enum PBoxType* arg_types) {
-    if (box->callback_count >= PBOX_MAX_CALLBACKS)
+    pthread_mutex_lock(&box->callback_lock);
+
+    if (atomic_load(&box->callback_count) >= PBOX_MAX_CALLBACKS) {
+        pthread_mutex_unlock(&box->callback_lock);
         return NULL;
+    }
 
     // nargs should be statically enforced by the C++ wrapper (static_assert).
     assert(nargs <= PBOX_MAX_ARGS);
 
-    int id = box->callback_count++;
+    // Use current count as slot index but don't publish yet -- the
+    // callback must be fully initialized before it becomes visible to
+    // pbox_dispatch_callback (which reads callback_count without the lock).
+    int id = atomic_load(&box->callback_count);
     struct PBoxCallback* cb = &box->callbacks[id];
     cb->func_ptr = host_func;
     cb->ret_type = ret_type;
@@ -771,14 +824,18 @@ void* pbox_register_callback(struct PBox* box, void* host_func,
     ffi_type* ffi_ret = pbox_get_ffi_type(ret_type);
     if (ffi_prep_cif(&cb->cif, FFI_DEFAULT_ABI, nargs, ffi_ret,
                      cb->ffi_arg_types) != FFI_OK) {
-        box->callback_count--;
+        pthread_mutex_unlock(&box->callback_lock);
         return NULL;
     }
+
+    // Struct is fully initialized -- publish it so dispatch can see it.
+    atomic_store(&box->callback_count, id + 1);
 
     // Request sandbox to create closure
     struct PBoxChannel* ch = get_or_create_channel(box);
     if (!ch) {
-        box->callback_count--;
+        atomic_store(&box->callback_count, id);
+        pthread_mutex_unlock(&box->callback_lock);
         return NULL;
     }
 
@@ -796,6 +853,7 @@ void* pbox_register_callback(struct PBox* box, void* host_func,
     cb->sandbox_closure = closure_addr;
 
     atomic_store(&ch->state, PBOX_STATE_IDLE);
+    pthread_mutex_unlock(&box->callback_lock);
     return closure_addr;
 }
 

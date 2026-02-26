@@ -24,7 +24,7 @@ int main() {
     printf("Registered callback\n");
 
     // Call sandbox function, passing callback
-    using ProcessFn = int(int, int(*)(int, int));
+    using ProcessFn = int(int, int (*)(int, int));
     int result = sandbox.call<ProcessFn>("process_data", 42, add_fn);
 
     printf("process_data returned: %d\n", result);

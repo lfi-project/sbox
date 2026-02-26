@@ -1,6 +1,6 @@
-#include <cstdio>
-#include <cassert>
 #include <pthread.h>
+#include <cassert>
+#include <cstdio>
 
 #ifdef SBOX_PROCESS
 #include "sbox/process.hh"
@@ -42,8 +42,8 @@ static void* thread_fn(void* arg) {
     tls_val = sandbox->call<int()>("get_tls");
     assert(tls_val == tls_base + ITERATIONS);
 
-    printf("Thread %d completed %d iterations (TLS: %d -> %d)\n",
-           id, ITERATIONS, tls_base, tls_val);
+    printf("Thread %d completed %d iterations (TLS: %d -> %d)\n", id,
+           ITERATIONS, tls_base, tls_val);
     return nullptr;
 }
 
@@ -69,7 +69,8 @@ int main() {
     // Spawn threads
     pthread_t threads[NUM_THREADS];
     for (int i = 0; i < NUM_THREADS; i++) {
-        pthread_create(&threads[i], nullptr, thread_fn, reinterpret_cast<void*>(static_cast<intptr_t>(i)));
+        pthread_create(&threads[i], nullptr, thread_fn,
+                       reinterpret_cast<void*>(static_cast<intptr_t>(i)));
     }
 
     // Wait for all threads

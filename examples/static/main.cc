@@ -1,5 +1,5 @@
-#include <cstdio>
 #include <cassert>
+#include <cstdio>
 
 #define SBOX_STATIC
 #include "sbox/passthrough.hh"
@@ -30,7 +30,8 @@ int main() {
     {
         auto ctx = sandbox.context();
         int value = 21;
-        int result = sandbox.call<int(const int*)>(ctx, SBOX_FN(double_value), ctx.in(value));
+        int result = sandbox.call<int(const int*)>(ctx, SBOX_FN(double_value),
+                                                   ctx.in(value));
         printf("double_value(21) = %d (expected 42)\n", result);
         assert(result == 42);
     }

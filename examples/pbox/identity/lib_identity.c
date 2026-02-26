@@ -4,8 +4,8 @@
 
 // Verify values written by host and modify them
 // Returns 0 on success, -1 on failure
-int verify_and_modify(int *shared, size_t size) {
-    (void)size;
+int verify_and_modify(int* shared, size_t size) {
+    (void) size;
     // Verify host wrote expected values
     if (shared[0] != 42 || shared[1] != 100)
         return -1;

@@ -1,5 +1,5 @@
-#include <cstdio>
 #include <cassert>
+#include <cstdio>
 
 #ifdef SBOX_PROCESS
 #include "sbox/process.hh"
@@ -28,7 +28,8 @@ int main() {
         auto ctx = sandbox.context();
         int result;
         sandbox.call<void(int*)>(ctx, "get_value", ctx.out(result));
-        printf("Out parameter: get_value() returned %d (expected 42)\n", result);
+        printf("Out parameter: get_value() returned %d (expected 42)\n",
+               result);
         assert(result == 42);
     }
 
@@ -36,8 +37,10 @@ int main() {
     {
         auto ctx = sandbox.context();
         int value = 21;
-        int result = sandbox.call<int(const int*)>(ctx, "double_value", ctx.in(value));
-        printf("In parameter: double_value(%d) = %d (expected 42)\n", value, result);
+        int result =
+            sandbox.call<int(const int*)>(ctx, "double_value", ctx.in(value));
+        printf("In parameter: double_value(%d) = %d (expected 42)\n", value,
+               result);
         assert(result == 42);
     }
 
@@ -47,7 +50,8 @@ int main() {
         int counter = 5;
         printf("InOut parameter: counter before = %d\n", counter);
         sandbox.call<void(int*)>(ctx, "increment", ctx.inout(counter));
-        printf("InOut parameter: counter after increment = %d (expected 6)\n", counter);
+        printf("InOut parameter: counter after increment = %d (expected 6)\n",
+               counter);
         assert(counter == 6);
     }
 
@@ -55,9 +59,10 @@ int main() {
     {
         auto ctx = sandbox.context();
         int a = 10, b = 32, result;
-        sandbox.call<void(const int*, const int*, int*)>(ctx, "add_to_result",
-            ctx.in(a), ctx.in(b), ctx.out(result));
-        printf("Multiple params: add_to_result(%d, %d) = %d (expected 42)\n", a, b, result);
+        sandbox.call<void(const int*, const int*, int*)>(
+            ctx, "add_to_result", ctx.in(a), ctx.in(b), ctx.out(result));
+        printf("Multiple params: add_to_result(%d, %d) = %d (expected 42)\n", a,
+               b, result);
         assert(result == 42);
     }
 
@@ -66,8 +71,12 @@ int main() {
         auto ctx = sandbox.context();
         Point p = {10, 20};
         printf("Struct inout: point before = (%d, %d)\n", p.x, p.y);
-        sandbox.call<void(Point*, int, int)>(ctx, "translate_point", ctx.inout(p), 5, -10);
-        printf("Struct inout: point after translate(5, -10) = (%d, %d) (expected 15, 10)\n", p.x, p.y);
+        sandbox.call<void(Point*, int, int)>(ctx, "translate_point",
+                                             ctx.inout(p), 5, -10);
+        printf(
+            "Struct inout: point after translate(5, -10) = (%d, %d) (expected "
+            "15, 10)\n",
+            p.x, p.y);
         assert(p.x == 15 && p.y == 10);
     }
 
@@ -76,7 +85,8 @@ int main() {
         auto ctx = sandbox.context();
         Point origin;
         sandbox.call<void(Point*)>(ctx, "get_origin", ctx.out(origin));
-        printf("Struct out: get_origin() = (%d, %d) (expected 0, 0)\n", origin.x, origin.y);
+        printf("Struct out: get_origin() = (%d, %d) (expected 0, 0)\n",
+               origin.x, origin.y);
         assert(origin.x == 0 && origin.y == 0);
     }
 
@@ -84,8 +94,10 @@ int main() {
     {
         auto ctx = sandbox.context();
         Point p = {-3, 4};
-        int dist = sandbox.call<int(const Point*)>(ctx, "manhattan_distance", ctx.in(p));
-        printf("Struct in: manhattan_distance((%d, %d)) = %d (expected 7)\n", p.x, p.y, dist);
+        int dist = sandbox.call<int(const Point*)>(ctx, "manhattan_distance",
+                                                   ctx.in(p));
+        printf("Struct in: manhattan_distance((%d, %d)) = %d (expected 7)\n",
+               p.x, p.y, dist);
         assert(dist == 7);
     }
 

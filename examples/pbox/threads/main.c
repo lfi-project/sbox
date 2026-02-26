@@ -1,25 +1,24 @@
-#include <stdio.h>
-#include <pthread.h>
 #include <assert.h>
+#include <pthread.h>
+#include <stdio.h>
 #include "pbox.h"
 
-static struct PBox *box;
-static void *add_fn;
-static void *slow_add_fn;
+static struct PBox* box;
+static void* add_fn;
+static void* slow_add_fn;
 
 #define NUM_THREADS 4
 #define ITERATIONS 100
 
-static void *thread_fn(void *arg) {
-    int id = (int)(intptr_t)arg;
+static void* thread_fn(void* arg) {
+    int id = (int) (intptr_t) arg;
 
     for (int i = 0; i < ITERATIONS; i++) {
         int a = id * 1000 + i;
         int b = i;
 
-        int result = pbox_call2(box, slow_add_fn, int, PBOX_TYPE_SINT32,
-                                int, PBOX_TYPE_SINT32, a,
-                                int, PBOX_TYPE_SINT32, b);
+        int result = pbox_call2(box, slow_add_fn, int, PBOX_TYPE_SINT32, int,
+                                PBOX_TYPE_SINT32, a, int, PBOX_TYPE_SINT32, b);
 
         assert(result == a + b);
     }
@@ -45,16 +44,15 @@ int main(void) {
     }
 
     // Quick sanity check on main thread
-    int result = pbox_call2(box, add_fn, int, PBOX_TYPE_SINT32,
-                            int, PBOX_TYPE_SINT32, 10,
-                            int, PBOX_TYPE_SINT32, 20);
+    int result = pbox_call2(box, add_fn, int, PBOX_TYPE_SINT32, int,
+                            PBOX_TYPE_SINT32, 10, int, PBOX_TYPE_SINT32, 20);
     printf("Main thread: add(10, 20) = %d\n", result);
     assert(result == 30);
 
     // Spawn threads
     pthread_t threads[NUM_THREADS];
     for (int i = 0; i < NUM_THREADS; i++) {
-        pthread_create(&threads[i], NULL, thread_fn, (void *)(intptr_t)i);
+        pthread_create(&threads[i], NULL, thread_fn, (void*) (intptr_t) i);
     }
 
     // Wait for all threads

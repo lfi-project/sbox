@@ -1,9 +1,9 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <errno.h>
 
 // Try to open a file - this should be blocked by seccomp
-int try_open(const char *path) {
+int try_open(const char* path) {
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
         return -errno;

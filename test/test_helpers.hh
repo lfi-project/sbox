@@ -6,7 +6,6 @@
 #include <cstdio>
 #include <cstring>
 
-
 // -- Struct definitions (must match testlib.c) --
 
 struct Point {

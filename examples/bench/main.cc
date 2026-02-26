@@ -48,7 +48,7 @@ int main() {
         double start = now();
         for (int i = 0; i < CALL_ITERATIONS; i++) {
             int result = add(i, i + 1);
-            (void)result;
+            (void) result;
         }
         double elapsed = now() - start;
         double per_call_us = (elapsed / CALL_ITERATIONS) * 1e6;
@@ -70,7 +70,7 @@ int main() {
         double start = now();
         for (int i = 0; i < CALL_ITERATIONS; i++) {
             int result = call_with_cb(i, cb);
-            (void)result;
+            (void) result;
         }
         double elapsed = now() - start;
         double per_call_us = (elapsed / CALL_ITERATIONS) * 1e6;
@@ -87,7 +87,7 @@ int main() {
         for (int i = 0; i < 10; i++) {
             std::thread t([&]() {
                 int result = add(1, 2);
-                (void)result;
+                (void) result;
             });
             t.join();
         }
@@ -96,7 +96,7 @@ int main() {
         for (int i = 0; i < THREAD_ITERATIONS; i++) {
             std::thread t([&]() {
                 int result = add(i, i + 1);
-                (void)result;
+                (void) result;
             });
             t.join();
         }
@@ -115,8 +115,8 @@ int main() {
             int a = i, b = i + 1;
             int sum, product;
             sandbox.call<void(const int*, const int*, int*, int*)>(
-                ctx, "multi_inout",
-                ctx.in(a), ctx.in(b), ctx.out(sum), ctx.out(product));
+                ctx, "multi_inout", ctx.in(a), ctx.in(b), ctx.out(sum),
+                ctx.out(product));
         }
 
         double start = now();
@@ -125,8 +125,8 @@ int main() {
             int a = i, b = i + 1;
             int sum, product;
             sandbox.call<void(const int*, const int*, int*, int*)>(
-                ctx, "multi_inout",
-                ctx.in(a), ctx.in(b), ctx.out(sum), ctx.out(product));
+                ctx, "multi_inout", ctx.in(a), ctx.in(b), ctx.out(sum),
+                ctx.out(product));
         }
         double elapsed = now() - start;
         double per_call_us = (elapsed / CALL_ITERATIONS) * 1e6;

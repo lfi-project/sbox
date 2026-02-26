@@ -1,11 +1,11 @@
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
 #include <time.h>
 #include "pbox.h"
 
-static struct PBox *box;
-static void *add_fn;
+static struct PBox* box;
+static void* add_fn;
 
 #define CALL_ITERATIONS 1000000
 #define THREAD_ITERATIONS 1000
@@ -16,12 +16,11 @@ static double now(void) {
     return ts.tv_sec + ts.tv_nsec / 1e9;
 }
 
-static void *thread_fn(void *arg) {
-    (void)arg;
-    int result = pbox_call2(box, add_fn, int, PBOX_TYPE_SINT32,
-                            int, PBOX_TYPE_SINT32, 1,
-                            int, PBOX_TYPE_SINT32, 2);
-    (void)result;
+static void* thread_fn(void* arg) {
+    (void) arg;
+    int result = pbox_call2(box, add_fn, int, PBOX_TYPE_SINT32, int,
+                            PBOX_TYPE_SINT32, 1, int, PBOX_TYPE_SINT32, 2);
+    (void) result;
     return NULL;
 }
 
@@ -41,8 +40,7 @@ int main(void) {
 
     // Warmup
     for (int i = 0; i < 100; i++) {
-        pbox_call2(box, add_fn, int, PBOX_TYPE_SINT32,
-                   int, PBOX_TYPE_SINT32, 1,
+        pbox_call2(box, add_fn, int, PBOX_TYPE_SINT32, int, PBOX_TYPE_SINT32, 1,
                    int, PBOX_TYPE_SINT32, 2);
     }
 
@@ -50,10 +48,10 @@ int main(void) {
     {
         double start = now();
         for (int i = 0; i < CALL_ITERATIONS; i++) {
-            int result = pbox_call2(box, add_fn, int, PBOX_TYPE_SINT32,
-                                    int, PBOX_TYPE_SINT32, i,
-                                    int, PBOX_TYPE_SINT32, i + 1);
-            (void)result;
+            int result =
+                pbox_call2(box, add_fn, int, PBOX_TYPE_SINT32, int,
+                           PBOX_TYPE_SINT32, i, int, PBOX_TYPE_SINT32, i + 1);
+            (void) result;
         }
         double elapsed = now() - start;
         double per_call_us = (elapsed / CALL_ITERATIONS) * 1e6;

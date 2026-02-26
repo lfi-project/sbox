@@ -125,9 +125,13 @@ static void channel_destructor(void* ptr) {
     // Signal the sandbox worker to exit
     pbox_set_state(&tch->channel->state, PBOX_STATE_EXIT);
 
-    // Unmap identity region if allocated
+    // Unmap host side of identity region only. The worker was just told
+    // to exit, so we can't send further requests on this channel.
+    // Using pbox_munmap_identity here would create a throwaway channel
+    // and could hang if the sandbox is unresponsive. The sandbox will
+    // clean up its own mappings when it exits.
     if (tch->idmem_base)
-        pbox_munmap_identity(box, tch->idmem_base, tch->idmem_size);
+        munmap(tch->idmem_base, tch->idmem_size);
 
     // Unmap and close
     munmap(tch->channel, sizeof(struct PBoxChannel));
@@ -915,8 +919,15 @@ void* pbox_mmap_identity(struct PBox* box, size_t length, int prot) {
         return NULL;
     }
 
-    // Send fd to sandbox
-    int sandbox_fd = pbox_send_fd(box, memfd);
+    // Send fd to sandbox without caching -- this memfd is temporary and
+    // will be closed after mapping, so caching would leave a stale entry.
+    struct PBoxChannel* ch = get_or_create_channel(box);
+    if (!ch) {
+        munmap(host_addr, length);
+        close(memfd);
+        return NULL;
+    }
+    int sandbox_fd = pbox_send_fd_on_channel(box, ch, memfd);
     if (sandbox_fd < 0) {
         munmap(host_addr, length);
         close(memfd);

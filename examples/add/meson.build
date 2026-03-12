@@ -1,5 +1,7 @@
 backend = get_option('sbox_backend')
 
+add_inc = include_directories('.')
+
 # Shared library for passthrough backend
 libadd = shared_library('add',
   'lib_add.c',
@@ -18,7 +20,7 @@ add_sandbox = executable('add_sandbox',
 if backend == 'process'
   add_main = executable('add_main',
     'main.cc',
-    include_directories: [sbox_inc, pbox_inc],
+    include_directories: [sbox_inc, pbox_inc, add_inc],
     link_with: libpbox,
     cpp_args: ['-DSBOX_PROCESS'],
     dependencies: [ffi_dep],
@@ -31,7 +33,7 @@ if backend == 'process'
 else
   add_main = executable('add_main',
     'main.cc',
-    include_directories: sbox_inc,
+    include_directories: [sbox_inc, add_inc],
     dependencies: [dependency('dl')],
     install: false,
   )

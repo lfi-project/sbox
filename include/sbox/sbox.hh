@@ -5,11 +5,28 @@
 #include <mutex>
 #include <unordered_map>
 
-// Macro to reference a function - expands differently based on backend
+namespace sbox {
+
+// TypedName - carries a function's name string along with its declared type.
+// Created by the SBOX_FN macro in dynamic mode so that call-site type
+// checking can be performed against the library header declaration.
+template<typename FnPtr>
+struct TypedName {
+    const char* name;
+    // Implicit conversion to const char* for backward compatibility
+    // with call<Sig>(const char*, ...) overloads.
+    operator const char*() const { return name; }
+};
+
+}  // namespace sbox
+
+// Macro to reference a function - expands differently based on backend.
+// In static mode: expands to function pointer (direct call, type-safe).
+// In dynamic mode: expands to TypedName carrying name + type from declaration.
 #ifdef SBOX_STATIC
 #define SBOX_FN(name) (name)
 #else
-#define SBOX_FN(name) (#name)
+#define SBOX_FN(name) (sbox::TypedName<decltype(&name)>{#name})
 #endif
 
 namespace sbox {

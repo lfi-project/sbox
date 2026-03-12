@@ -131,9 +131,22 @@ public:
         return call_ptr_sig<Sig>(fn, args...);
     }
 
+    // Call with TypedName (signature deduced from declaration)
+    template<typename Ret, typename... Params, typename... Args>
+    auto call(TypedName<Ret (*)(Params...)> tn, Args... args) {
+        static_assert(sizeof...(Params) == sizeof...(Args),
+                      "Wrong number of arguments for sandboxed function");
+        return call<Ret(Params...)>(tn.name, args...);
+    }
+
     // Context-aware call (defined after CallContext)
     template<typename Sig, typename... Args>
     auto call(CallContext<Process>& ctx, const char* name, Args... args);
+
+    // Context-aware call with TypedName (defined after CallContext)
+    template<typename Ret, typename... Params, typename... Args>
+    auto call(CallContext<Process>& ctx, TypedName<Ret (*)(Params...)> tn,
+              Args... args);
 
     // Create a call context (defined after CallContext)
     inline CallContext<Process> context();
@@ -143,6 +156,12 @@ public:
     template<typename Sig>
     FnHandle<Process, Sig> fn(const char* name) {
         return FnHandle<Process, Sig>(*this, lookup(name));
+    }
+
+    // Get a function handle with TypedName (signature deduced from declaration)
+    template<typename Ret, typename... Params>
+    FnHandle<Process, Ret(Params...)> fn(TypedName<Ret (*)(Params...)> tn) {
+        return FnHandle<Process, Ret(Params...)>(*this, lookup(tn.name));
     }
 
     // Call via function pointer (used by FnHandle)
@@ -436,6 +455,14 @@ auto Sandbox<Process>::call(CallContext<Process>& ctx, const char* name,
         ctx.finalize();
         return result;
     }
+}
+
+template<typename Ret, typename... Params, typename... Args>
+auto Sandbox<Process>::call(CallContext<Process>& ctx,
+                            TypedName<Ret (*)(Params...)> tn, Args... args) {
+    static_assert(sizeof...(Params) == sizeof...(Args),
+                  "Wrong number of arguments for sandboxed function");
+    return call<Ret(Params...)>(ctx, tn.name, args...);
 }
 
 }  // namespace sbox

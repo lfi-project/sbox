@@ -143,6 +143,14 @@ public:
         return call_ptr_sig<Sig>(fn, args...);
     }
 
+    // Call with TypedName (dynamic mode, signature deduced from declaration)
+    template<typename Ret, typename... Params, typename... Args>
+    auto call(TypedName<Ret (*)(Params...)> tn, Args... args) {
+        static_assert(sizeof...(Params) == sizeof...(Args),
+                      "Wrong number of arguments for sandboxed function");
+        return call<Ret(Params...)>(tn.name, args...);
+    }
+
     // Call a function by pointer (static mode) - zero overhead
     template<typename Sig, typename... Args>
     auto call(Sig* fn, Args... args) {
@@ -162,6 +170,15 @@ public:
             ctx.finalize();
             return result;
         }
+    }
+
+    // Context-aware call with TypedName
+    template<typename Ret, typename... Params, typename... Args>
+    auto call(CallContext<Passthrough>& ctx, TypedName<Ret (*)(Params...)> tn,
+              Args... args) {
+        static_assert(sizeof...(Params) == sizeof...(Args),
+                      "Wrong number of arguments for sandboxed function");
+        return call<Ret(Params...)>(ctx, tn.name, args...);
     }
 
     // Context-aware call by pointer (static mode)
@@ -187,6 +204,12 @@ public:
     template<typename Sig>
     FnHandle<Passthrough, Sig> fn(const char* name) {
         return FnHandle<Passthrough, Sig>(*this, lookup(name));
+    }
+
+    // Get a function handle with TypedName (signature deduced from declaration)
+    template<typename Ret, typename... Params>
+    FnHandle<Passthrough, Ret(Params...)> fn(TypedName<Ret (*)(Params...)> tn) {
+        return FnHandle<Passthrough, Ret(Params...)>(*this, lookup(tn.name));
     }
 
     // Get a function handle by pointer (static mode) - just returns the pointer

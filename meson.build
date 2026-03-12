@@ -19,9 +19,20 @@ testlib = shared_library('testlib',
 # Test include directory (for test_helpers.hh)
 test_inc = include_directories('test')
 
+# Dynamic function call library
+dyfn_inc = include_directories('src/dyfn')
+
+if host_machine.cpu_family() == 'x86_64'
+  dyfn_asm = files('src/dyfn/sbox_dyfn_x86_64.S')
+elif host_machine.cpu_family() == 'aarch64'
+  dyfn_asm = files('src/dyfn/sbox_dyfn_aarch64.S')
+else
+  error('Unsupported architecture for sbox_dyfn')
+endif
+
+dyfn_sources = [files('src/dyfn/sbox_dyfn.c', 'src/dyfn/sbox_dyfn_offsets_check.c'), dyfn_asm]
+
 # Process backend (pbox)
-libffi_subproj = subproject('libffi', default_options: ['tests=false', 'warning_level=0', 'default_library=static'])
-ffi_dep = libffi_subproj.get_variable('ffi_dep')
 dl_dep = meson.get_compiler('c').find_library('dl')
 
 pbox_inc = include_directories('src/pbox')
@@ -30,15 +41,15 @@ libpbox = library('pbox',
   'src/pbox/pbox.c',
   'src/pbox/pbox_procmaps.c',
   include_directories: pbox_inc,
-  dependencies: [ffi_dep],
   install: false,
 )
 
 libpbox_sandbox = static_library('pbox_sandbox',
   'src/pbox/pbox_sandbox.c',
   'src/pbox/pbox_seccomp.c',
-  include_directories: pbox_inc,
-  dependencies: [ffi_dep, dl_dep],
+  dyfn_sources,
+  include_directories: [pbox_inc, dyfn_inc],
+  dependencies: [dl_dep],
   install: false,
 )
 
@@ -47,7 +58,7 @@ test_sandbox = executable('test_sandbox',
   'test/testlib.c',
   link_with: libpbox_sandbox,
   link_args: ['-rdynamic'],
-  dependencies: [ffi_dep, dl_dep],
+  dependencies: [dl_dep],
   install: false,
 )
 
@@ -74,7 +85,6 @@ foreach cat : test_categories
     'test/test_process_' + cat + '.cc',
     include_directories: [sbox_inc, pbox_inc, test_inc],
     link_with: libpbox,
-    dependencies: [ffi_dep],
     install: false,
   )
   test('process_' + cat, exe,
@@ -107,7 +117,6 @@ foreach t : process_extra_tests
     'test/test_process_' + t + '.cc',
     include_directories: [sbox_inc, pbox_inc, test_inc],
     link_with: libpbox,
-    dependencies: [ffi_dep],
     install: false,
   )
   test('process_' + t, exe,

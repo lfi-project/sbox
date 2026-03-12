@@ -3,7 +3,7 @@ shm_pbox = executable('shm_pbox',
   link_with: libpbox_sandbox,
   link_args: ['-rdynamic'],
   include_directories: pbox_inc,
-  dependencies: [ffi_dep, dl_dep],
+  dependencies: [dl_dep],
 )
 
 shm_pbox_main = executable('shm_pbox_main',

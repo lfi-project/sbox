@@ -101,6 +101,36 @@ struct pbox_type<sbox<T*>> {
 template<typename T>
 inline constexpr PBoxType pbox_type_v = pbox_type<T>::value;
 
+// Read a typed argument from packed arg_storage at the given offset
+template<size_t I, typename T>
+T read_callback_arg(const char* arg_storage, const uint64_t* arg_offsets) {
+    T val;
+    std::memcpy(&val, &arg_storage[arg_offsets[I]], sizeof(T));
+    return val;
+}
+
+// Typed callback dispatcher: unpacks args and calls the function
+template<typename Ret, typename... Args, size_t... Is>
+void callback_dispatch_impl(pbox_fn_t func_ptr, const char* arg_storage,
+                            const uint64_t* arg_offsets, char* result_storage,
+                            std::index_sequence<Is...>) {
+    auto fn = reinterpret_cast<Ret (*)(Args...)>(func_ptr);
+    if constexpr (std::is_void_v<Ret>) {
+        fn(read_callback_arg<Is, Args>(arg_storage, arg_offsets)...);
+    } else {
+        Ret result = fn(read_callback_arg<Is, Args>(arg_storage, arg_offsets)...);
+        std::memcpy(result_storage, &result, sizeof(Ret));
+    }
+}
+
+template<typename Ret, typename... Args>
+void callback_dispatch(pbox_fn_t func_ptr, const char* arg_storage,
+                       const uint64_t* arg_offsets, char* result_storage) {
+    callback_dispatch_impl<Ret, Args...>(func_ptr, arg_storage, arg_offsets,
+                                         result_storage,
+                                         std::index_sequence_for<Args...>{});
+}
+
 }  // namespace detail
 
 // Process backend - runs code in sandboxed child process via pbox
@@ -326,9 +356,11 @@ public:
         if constexpr (nargs > 0) {
             fill_arg_types<0, Args...>(arg_types);
         }
-        void* raw = pbox_register_callback(box_, reinterpret_cast<void*>(fn),
-                                           detail::pbox_type_v<Ret>, nargs,
-                                           nargs > 0 ? arg_types : nullptr);
+        void* raw = pbox_register_callback(
+            box_, reinterpret_cast<pbox_fn_t>(fn),
+            detail::callback_dispatch<Ret, Args...>,
+            detail::pbox_type_v<Ret>, nargs,
+            nargs > 0 ? arg_types : nullptr);
         return sbox<Ret (*)(Args...)>(reinterpret_cast<Ret (*)(Args...)>(raw));
     }
 
@@ -539,8 +571,8 @@ auto Sandbox<Process>::call(CallContext<Process>& ctx,
                   "Wrong number of arguments for sandboxed function");
     static_assert(
         (detail::check_sbox_ptr_arg_v<Params, Args> && ...),
-        "Pointer arguments to sandboxed functions must use "
-        "sbox<T*> or sbox_safe<T*>, not raw pointers");
+        "Pointer arguments must be sbox<T*> or sbox_safe<T*> with a "
+        "matching type");
     return call<Ret(Params...)>(ctx, tn.name, args...);
 }
 

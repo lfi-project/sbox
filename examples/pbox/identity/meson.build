@@ -3,7 +3,7 @@ executable('identity_pbox_sandbox',
   link_with: libpbox_sandbox,
   link_args: ['-rdynamic'],
   include_directories: pbox_inc,
-  dependencies: [ffi_dep, dl_dep],
+  dependencies: [dl_dep],
 )
 
 identity_pbox_host = executable('identity_pbox_host',

@@ -3,7 +3,7 @@
 
 #include <assert.h>
 #include <dlfcn.h>
-#include <ffi.h>
+#include "sbox_dyfn.h"
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -18,78 +18,35 @@ static int g_sock_fd;
 // Thread-local storage for current channel (used by callback closures)
 static __thread struct PBoxChannel* tls_current_channel = NULL;
 
-// Track closures for cleanup
-struct ClosureInfo {
-    ffi_closure* closure;
-    ffi_cif* cif;
-    ffi_type** arg_types;
-};
 
-static __thread struct ClosureInfo tls_closures[PBOX_MAX_CLOSURES];
-static __thread int tls_closure_count = 0;
 
-static void free_all_closures(void) {
-    for (int i = 0; i < tls_closure_count; i++) {
-        ffi_closure_free(tls_closures[i].closure);
-        free(tls_closures[i].cif);
-        free(tls_closures[i].arg_types);
-    }
-    tls_closure_count = 0;
-}
-
-// Map pbox type codes to libffi types
-static ffi_type* get_ffi_type(int type_code) {
-    switch (type_code) {
-        case PBOX_TYPE_VOID:
-            return &ffi_type_void;
-        case PBOX_TYPE_UINT8:
-            return &ffi_type_uint8;
-        case PBOX_TYPE_SINT8:
-            return &ffi_type_sint8;
-        case PBOX_TYPE_UINT16:
-            return &ffi_type_uint16;
-        case PBOX_TYPE_SINT16:
-            return &ffi_type_sint16;
-        case PBOX_TYPE_UINT32:
-            return &ffi_type_uint32;
-        case PBOX_TYPE_SINT32:
-            return &ffi_type_sint32;
-        case PBOX_TYPE_UINT64:
-            return &ffi_type_uint64;
-        case PBOX_TYPE_SINT64:
-            return &ffi_type_sint64;
-        case PBOX_TYPE_FLOAT:
-            return &ffi_type_float;
-        case PBOX_TYPE_DOUBLE:
-            return &ffi_type_double;
-        case PBOX_TYPE_POINTER:
-            return &ffi_type_pointer;
-        default:
-            return &ffi_type_void;
-    }
-}
-
-// Closure handler - invoked by libffi when sandbox calls a callback stub
-static void closure_handler(ffi_cif* cif, void* ret, void** args,
-                            void* user_data) {
-    int callback_id = (int) (uintptr_t) user_data;
+// Called by assembly closure common handler.
+// Extracts args from saved registers, signals host, returns result.
+void sbox_dyfn_closure_dispatch(struct SboxDyfnClosureSavedRegs* saved,
+                                struct SboxDyfnClosureResult* result) {
+    struct SboxDyfnClosureInfo* info =
+        &sbox_dyfn_closure_info[saved->stub_index];
     struct PBoxChannel* ch = tls_current_channel;
 
-    if (!ch) {
-        // Should not happen - callback called outside of pbox_call context
+    if (!ch)
         return;
-    }
 
-    // Pack callback request into channel
-    ch->callback_id = callback_id;
-    ch->nargs = cif->nargs;
-    ch->ret_type = PBOX_TYPE_VOID;  // Will be set from stored types
+    ch->callback_id = info->callback_id;
+    ch->nargs = info->nargs;
 
+    // Extract args from saved registers using type info
+    int int_idx = 0, float_idx = 0;
     size_t offset = 0;
-    for (unsigned i = 0; i < cif->nargs; i++) {
-        size_t size = cif->arg_types[i]->size;
+    for (int i = 0; i < info->nargs; i++) {
+        enum SboxDyfnClass cls = sbox_dyfn_classify(info->arg_types[i]);
+        size_t size = sbox_dyfn_type_size(info->arg_types[i]);
         ch->args[i] = offset;
-        memcpy(&ch->arg_storage[offset], args[i], size);
+        if (cls == SBOX_DYFN_CLASS_FLOAT || cls == SBOX_DYFN_CLASS_DOUBLE)
+            memcpy(&ch->arg_storage[offset], &saved->float_regs[float_idx++],
+                   size);
+        else
+            memcpy(&ch->arg_storage[offset], &saved->int_regs[int_idx++],
+                   size);
         offset += size;
     }
 
@@ -100,8 +57,13 @@ static void closure_handler(ffi_cif* cif, void* ret, void** args,
     pbox_wait_for_state(&ch->state, PBOX_STATE_REQUEST);
 
     // Copy result back
-    if (cif->rtype != &ffi_type_void && ret != NULL)
-        memcpy(ret, ch->result_storage, cif->rtype->size);
+    result->ret_class = sbox_dyfn_classify(info->ret_type);
+    size_t ret_size = sbox_dyfn_type_size(info->ret_type);
+    if (result->ret_class == SBOX_DYFN_CLASS_FLOAT ||
+        result->ret_class == SBOX_DYFN_CLASS_DOUBLE)
+        memcpy(&result->float_val, ch->result_storage, ret_size);
+    else if (result->ret_class != SBOX_DYFN_CLASS_VOID)
+        memcpy(&result->int_val, ch->result_storage, ret_size);
 }
 
 // Receive a file descriptor over a Unix socket
@@ -131,32 +93,27 @@ static int recv_fd(int sock_fd) {
     return fd;
 }
 
-// Perform a dynamic function call using libffi
+// Perform a dynamic function call
 static bool do_ffi_call(struct PBoxChannel* ch) {
-    ffi_cif cif;
-    ffi_type* arg_types[PBOX_MAX_ARGS];
-    void* arg_values[PBOX_MAX_ARGS];
-
-    // Build argument type array and value pointers.
-    // Offsets are packed by the host; cannot overflow with current max types.
     _Static_assert(PBOX_MAX_ARGS * sizeof(uint64_t) <= PBOX_ARG_STORAGE,
                    "arg_storage too small for max args");
+
+    void* arg_values[PBOX_MAX_ARGS];
     for (int i = 0; i < ch->nargs; i++) {
-        arg_types[i] = get_ffi_type(ch->arg_types[i]);
         assert(ch->args[i] < PBOX_ARG_STORAGE);
         arg_values[i] = &ch->arg_storage[ch->args[i]];
     }
 
-    // Prepare the call interface
-    ffi_type* ret_type = get_ffi_type(ch->ret_type);
-    if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, ch->nargs, ret_type, arg_types) !=
-        FFI_OK) {
-        return false;
-    }
+    struct SboxDyfnCallArgs call;
+    sbox_dyfn_prep_call(&call, (void*) (uintptr_t) ch->func_addr,
+                        (enum SboxDyfnType) ch->ret_type, ch->nargs,
+                        (const enum SboxDyfnType*) ch->arg_types, arg_values);
 
-    ffi_call(&cif, (void (*)(void))(uintptr_t) ch->func_addr,
-             ch->result_storage, arg_values);
+    struct SboxDyfnCallResult result;
+    sbox_dyfn_call(&call, &result);
 
+    sbox_dyfn_store_result(&result, (enum SboxDyfnType) ch->ret_type,
+                           ch->result_storage);
     return true;
 }
 
@@ -210,7 +167,7 @@ int pbox_spawn_worker(int shm_fd) {
 static void dispatch_loop(struct PBoxChannel* ch, bool is_control) {
     // Set TLS for callback closures
     tls_current_channel = ch;
-    tls_closure_count = 0;
+    sbox_dyfn_closure_free_all();
 
     while (1) {
         // Wait for a request (or exit signal)
@@ -219,7 +176,7 @@ static void dispatch_loop(struct PBoxChannel* ch, bool is_control) {
             if (state == PBOX_STATE_REQUEST)
                 break;
             if (state == PBOX_STATE_EXIT) {
-                free_all_closures();
+                sbox_dyfn_closure_free_all();
                 return;
             }
             pbox_futex_wait(&ch->state, state);
@@ -250,60 +207,12 @@ static void dispatch_loop(struct PBoxChannel* ch, bool is_control) {
                 }
                 break;
             case PBOX_REQ_CREATE_CLOSURE: {
-                // Check closure limit
-                if (tls_closure_count >= PBOX_MAX_CLOSURES) {
-                    ch->closure_addr = 0;
-                    break;
-                }
-
-                // Allocate closure using libffi
-                void* closure_mem;
-                ffi_closure* closure =
-                    ffi_closure_alloc(sizeof(ffi_closure), &closure_mem);
-                if (!closure) {
-                    ch->closure_addr = 0;
-                    break;
-                }
-
-                // Build ffi_cif for this signature (must persist for closure
-                // lifetime)
-                ffi_cif* cif = malloc(sizeof(ffi_cif));
-                ffi_type** arg_types = NULL;
-                if (ch->closure_nargs > 0) {
-                    arg_types = malloc(ch->closure_nargs * sizeof(ffi_type*));
-                    for (int i = 0; i < ch->closure_nargs; i++)
-                        arg_types[i] = get_ffi_type(ch->closure_arg_types[i]);
-                }
-
-                ffi_type* ret_type = get_ffi_type(ch->closure_ret_type);
-                if (ffi_prep_cif(cif, FFI_DEFAULT_ABI, ch->closure_nargs,
-                                 ret_type, arg_types) != FFI_OK) {
-                    ffi_closure_free(closure);
-                    free(cif);
-                    free(arg_types);
-                    ch->closure_addr = 0;
-                    break;
-                }
-
-                // Create closure with callback_id as user_data
-                if (ffi_prep_closure_loc(
-                        closure, cif, closure_handler,
-                        (void*) (uintptr_t) ch->closure_callback_id,
-                        closure_mem) != FFI_OK) {
-                    ffi_closure_free(closure);
-                    free(cif);
-                    free(arg_types);
-                    ch->closure_addr = 0;
-                    break;
-                }
-
-                // Track for cleanup
-                tls_closures[tls_closure_count].closure = closure;
-                tls_closures[tls_closure_count].cif = cif;
-                tls_closures[tls_closure_count].arg_types = arg_types;
-                tls_closure_count++;
-
-                ch->closure_addr = (uintptr_t) closure_mem;
+                void* stub = sbox_dyfn_closure_alloc(
+                    ch->closure_callback_id,
+                    (enum SboxDyfnType) ch->closure_ret_type,
+                    ch->closure_nargs,
+                    (const enum SboxDyfnType*) ch->closure_arg_types);
+                ch->closure_addr = (uintptr_t) stub;
                 break;
             }
             default:

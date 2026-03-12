@@ -3,7 +3,7 @@ add_pbox = executable('add_pbox',
   link_with: libpbox_sandbox,
   link_args: ['-rdynamic'],
   include_directories: pbox_inc,
-  dependencies: [ffi_dep, dl_dep],
+  dependencies: [dl_dep],
 )
 
 add_pbox_main = executable('add_pbox_main',

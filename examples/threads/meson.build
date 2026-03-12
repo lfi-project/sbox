@@ -12,7 +12,7 @@ threads_sandbox = executable('threads_sandbox',
   'lib_threads.c',
   link_with: libpbox_sandbox,
   link_args: ['-rdynamic'],
-  dependencies: [ffi_dep, dl_dep],
+  dependencies: [dl_dep],
   install: false,
 )
 
@@ -22,7 +22,7 @@ if backend == 'process'
     include_directories: [sbox_inc, pbox_inc],
     link_with: libpbox,
     cpp_args: ['-DSBOX_PROCESS'],
-    dependencies: [ffi_dep, threads_dep],
+    dependencies: [threads_dep],
     install: false,
   )
   test('threads', threads_main,

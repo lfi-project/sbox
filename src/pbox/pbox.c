@@ -7,7 +7,6 @@
 
 #include <assert.h>
 #include <fcntl.h>
-#include <ffi.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stddef.h>
@@ -23,13 +22,12 @@
 #define PBOX_MAX_CALLBACKS 64
 
 struct PBoxCallback {
-    void* func_ptr;  // Host function pointer
+    pbox_fn_t func_ptr;
+    pbox_callback_dispatch_fn dispatch;
     enum PBoxType ret_type;
     int nargs;
     enum PBoxType arg_types[PBOX_MAX_ARGS];
-    void* sandbox_closure;                   // Sandbox closure address
-    ffi_cif cif;                             // Cached call interface
-    ffi_type* ffi_arg_types[PBOX_MAX_ARGS];  // Cached ffi types for cif
+    void* sandbox_closure;
 };
 
 struct PBoxFdEntry {
@@ -542,36 +540,6 @@ static size_t pbox_type_size(enum PBoxType type) {
     }
 }
 
-static ffi_type* pbox_get_ffi_type(enum PBoxType type) {
-    switch (type) {
-        case PBOX_TYPE_VOID:
-            return &ffi_type_void;
-        case PBOX_TYPE_UINT8:
-            return &ffi_type_uint8;
-        case PBOX_TYPE_SINT8:
-            return &ffi_type_sint8;
-        case PBOX_TYPE_UINT16:
-            return &ffi_type_uint16;
-        case PBOX_TYPE_SINT16:
-            return &ffi_type_sint16;
-        case PBOX_TYPE_UINT32:
-            return &ffi_type_uint32;
-        case PBOX_TYPE_SINT32:
-            return &ffi_type_sint32;
-        case PBOX_TYPE_UINT64:
-            return &ffi_type_uint64;
-        case PBOX_TYPE_SINT64:
-            return &ffi_type_sint64;
-        case PBOX_TYPE_FLOAT:
-            return &ffi_type_float;
-        case PBOX_TYPE_DOUBLE:
-            return &ffi_type_double;
-        case PBOX_TYPE_POINTER:
-            return &ffi_type_pointer;
-        default:
-            return &ffi_type_void;
-    }
-}
 
 // Dispatch a callback request from sandbox to host
 static void pbox_dispatch_callback(struct PBox* box, struct PBoxChannel* ch) {
@@ -581,25 +549,20 @@ static void pbox_dispatch_callback(struct PBox* box, struct PBoxChannel* ch) {
 
     struct PBoxCallback* cb = &box->callbacks[id];
 
-    // Unpack arguments from channel.
-    // Offsets are sandbox-controlled; bounds-check to prevent out-of-bounds
-    // reads on the host. Callback functions are still responsible for
-    // validating argument values (e.g., pointers) from the untrusted sandbox.
-    void* arg_values[PBOX_MAX_ARGS];
+    // Bounds-check sandbox-provided offsets to prevent out-of-bounds reads.
+    // Read each offset once into a local to prevent TOCTOU races.
+    uint64_t arg_offsets[PBOX_MAX_ARGS];
     for (int i = 0; i < cb->nargs; i++) {
-        // Read offset once into a local to prevent TOCTOU -- the sandbox
-        // could race to change ch->args[i] between the bounds check and use.
-        uint64_t arg_offset = ch->args[i];
-        if (arg_offset >= PBOX_ARG_STORAGE) {
+        arg_offsets[i] = ch->args[i];
+        if (arg_offsets[i] >= PBOX_ARG_STORAGE) {
             fprintf(stderr, "pbox: sandbox violated callback protocol\n");
             kill(box->pid, SIGKILL);
             return;
         }
-        arg_values[i] = &ch->arg_storage[arg_offset];
     }
 
-    // Call host function using cached cif
-    ffi_call(&cb->cif, cb->func_ptr, ch->result_storage, arg_values);
+    cb->dispatch(cb->func_ptr, ch->arg_storage, arg_offsets,
+                 ch->result_storage);
 }
 
 // Wait for response, handling callbacks from sandbox
@@ -798,7 +761,8 @@ int pbox_close(struct PBox* box, int sandbox_fd) {
     return result;
 }
 
-void* pbox_register_callback(struct PBox* box, void* host_func,
+void* pbox_register_callback(struct PBox* box, pbox_fn_t host_func,
+                             pbox_callback_dispatch_fn dispatch,
                              enum PBoxType ret_type, int nargs,
                              const enum PBoxType* arg_types) {
     pthread_mutex_lock(&box->callback_lock);
@@ -817,20 +781,11 @@ void* pbox_register_callback(struct PBox* box, void* host_func,
     int id = atomic_load(&box->callback_count);
     struct PBoxCallback* cb = &box->callbacks[id];
     cb->func_ptr = host_func;
+    cb->dispatch = dispatch;
     cb->ret_type = ret_type;
     cb->nargs = nargs;
-    for (int i = 0; i < nargs && i < PBOX_MAX_ARGS; i++) {
+    for (int i = 0; i < nargs && i < PBOX_MAX_ARGS; i++)
         cb->arg_types[i] = arg_types[i];
-        cb->ffi_arg_types[i] = pbox_get_ffi_type(arg_types[i]);
-    }
-
-    // Pre-compute ffi_cif for callback dispatch
-    ffi_type* ffi_ret = pbox_get_ffi_type(ret_type);
-    if (ffi_prep_cif(&cb->cif, FFI_DEFAULT_ABI, nargs, ffi_ret,
-                     cb->ffi_arg_types) != FFI_OK) {
-        pthread_mutex_unlock(&box->callback_lock);
-        return NULL;
-    }
 
     // Struct is fully initialized -- publish it so dispatch can see it.
     atomic_store(&box->callback_count, id + 1);

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "pbox.h"
 
 // Host callback function - will be called by sandbox code
@@ -6,6 +7,18 @@
 static int my_adder(int a, int b) {
     printf("[HOST callback] adding %d + %d = %d\n", a, b, a + b);
     return a + b;
+}
+
+// Dispatch function: unpacks args from storage and calls the real function
+static void my_adder_dispatch(pbox_fn_t func_ptr, const char* arg_storage,
+                               const uint64_t* arg_offsets,
+                               char* result_storage) {
+    int (*fn)(int, int) = (int (*)(int, int))func_ptr;
+    int a, b;
+    memcpy(&a, &arg_storage[arg_offsets[0]], sizeof(int));
+    memcpy(&b, &arg_storage[arg_offsets[1]], sizeof(int));
+    int result = fn(a, b);
+    memcpy(result_storage, &result, sizeof(int));
 }
 
 int main(void) {
@@ -16,10 +29,10 @@ int main(void) {
     }
 
     // Register callback - get a function pointer usable in the sandbox
-    void* add_fn = pbox_register_callback2(box, my_adder,
-                                           PBOX_TYPE_SINT32,  // return type
-                                           PBOX_TYPE_SINT32,
-                                           PBOX_TYPE_SINT32);  // arg types
+    enum PBoxType arg_types[] = {PBOX_TYPE_SINT32, PBOX_TYPE_SINT32};
+    void* add_fn = pbox_register_callback(box, (pbox_fn_t)my_adder,
+                                           my_adder_dispatch,
+                                           PBOX_TYPE_SINT32, 2, arg_types);
 
     if (!add_fn) {
         fprintf(stderr, "Failed to register callback\n");

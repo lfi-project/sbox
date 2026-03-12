@@ -11,7 +11,7 @@ shm_sandbox = executable('shm_sandbox',
   'lib_shm.c',
   link_with: libpbox_sandbox,
   link_args: ['-rdynamic'],
-  dependencies: [ffi_dep, dl_dep],
+  dependencies: [dl_dep],
   install: false,
 )
 
@@ -21,7 +21,7 @@ if backend == 'process'
     include_directories: [sbox_inc, pbox_inc],
     link_with: libpbox,
     cpp_args: ['-DSBOX_PROCESS'],
-    dependencies: [ffi_dep],
+
     install: false,
   )
   test('shm', shm_main,

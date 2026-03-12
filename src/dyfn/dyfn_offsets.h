@@ -1,6 +1,6 @@
 #pragma once
 
-// SboxDyfnCallArgs offsets
+// DyfnCallArgs offsets
 #define DYFN_CALL_INT_REGS     0
 #define DYFN_CALL_FLOAT_REGS   64
 #define DYFN_CALL_INT_COUNT    128
@@ -10,16 +10,16 @@
 #define DYFN_CALL_FUNC         176
 #define DYFN_CALL_RET_CLASS    184
 
-// SboxDyfnCallResult offsets
+// DyfnCallResult offsets
 #define DYFN_RESULT_INT_VAL    0
 #define DYFN_RESULT_FLOAT_VAL  8
 
-// SboxDyfnClosureSavedRegs offsets
+// DyfnClosureSavedRegs offsets
 #define DYFN_SAVED_INT_REGS    0
 #define DYFN_SAVED_FLOAT_REGS  64
 #define DYFN_SAVED_STUB_INDEX  128
 
-// SboxDyfnClosureResult offsets
+// DyfnClosureResult offsets
 #define DYFN_CLOSURE_INT_VAL   0
 #define DYFN_CLOSURE_FLOAT_VAL 8
 #define DYFN_CLOSURE_RET_CLASS 16
@@ -32,5 +32,5 @@
 #define DYFN_CLOSURE_FRAME_SIZE \
     (DYFN_SIZEOF_CLOSURE_SAVED_REGS + DYFN_SIZEOF_CLOSURE_RESULT)
 
-// Maximum number of closure stubs (must match SBOX_DYFN_MAX_CLOSURES in sbox_dyfn.h)
-#define DYFN_MAX_CLOSURES 64
+// Maximum number of closure stubs (for assembly use; must match DYFN_MAX_CLOSURES in dyfn.h)
+#define DYFN_MAX_CLOSURES_ASM 64

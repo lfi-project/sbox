@@ -1,14 +1,14 @@
-#include "sbox_dyfn_offsets.h"
+#include "dyfn_offsets.h"
 
 // Mark stack as non-executable
 .section .note.GNU-stack,"",@progbits
 
 .text
 
-// sbox_dyfn_call(SboxDyfnCallArgs* args, SboxDyfnCallResult* result)
+// dyfn_call(DyfnCallArgs* args, DyfnCallResult* result)
 // %rdi = args, %rsi = result
-.global sbox_dyfn_call
-sbox_dyfn_call:
+.global dyfn_call
+dyfn_call:
     push %rbp
     mov  %rsp, %rbp
     push %rbx
@@ -73,14 +73,14 @@ sbox_dyfn_call:
 
 .macro closure_stub i
     .p2align 4
-    .global sbox_dyfn_stub_\i
-    sbox_dyfn_stub_\i:
+    .global dyfn_stub_\i
+    dyfn_stub_\i:
         movl $\i, %r10d
-        jmp  sbox_dyfn_closure_common
+        jmp  dyfn_closure_common
 .endm
 
 .macro gen_stubs i
-    .if \i < DYFN_MAX_CLOSURES
+    .if \i < DYFN_MAX_CLOSURES_ASM
         closure_stub \i
         gen_stubs %(\i + 1)
     .endif
@@ -93,13 +93,13 @@ gen_stubs 0
 // Stack has caller's return address at (%rsp), so %rsp % 16 == 8.
 //
 // Stack layout (offsets from %rsp after allocation):
-//   0                            : SboxDyfnClosureSavedRegs
-//   DYFN_SIZEOF_CLOSURE_SAVED_REGS : SboxDyfnClosureResult
+//   0                              : DyfnClosureSavedRegs
+//   DYFN_SIZEOF_CLOSURE_SAVED_REGS : DyfnClosureResult
 
 #define SAVED_BASE  0
 #define RESULT_BASE DYFN_SIZEOF_CLOSURE_SAVED_REGS
 
-sbox_dyfn_closure_common:
+dyfn_closure_common:
     // +8 for alignment: return address makes %rsp 8-misaligned on entry
     sub  $(DYFN_CLOSURE_FRAME_SIZE + 8), %rsp
 
@@ -124,10 +124,10 @@ sbox_dyfn_closure_common:
     // Save stub index
     movl %r10d, (SAVED_BASE + DYFN_SAVED_STUB_INDEX)(%rsp)
 
-    // Call sbox_dyfn_closure_dispatch(&saved_regs, &result)
+    // Call dyfn_closure_dispatch(&saved_regs, &result)
     lea  SAVED_BASE(%rsp), %rdi
     lea  RESULT_BASE(%rsp), %rsi
-    call sbox_dyfn_closure_dispatch
+    call dyfn_closure_dispatch
 
     // Load return values
     mov   (RESULT_BASE + DYFN_CLOSURE_INT_VAL)(%rsp), %rax
@@ -139,14 +139,14 @@ sbox_dyfn_closure_common:
 // --- Stub table ---
 
 .macro gen_table_entry i
-    .if \i < DYFN_MAX_CLOSURES
-        .quad sbox_dyfn_stub_\i
+    .if \i < DYFN_MAX_CLOSURES_ASM
+        .quad dyfn_stub_\i
         gen_table_entry %(\i + 1)
     .endif
 .endm
 
 .data
 .p2align 3
-.global sbox_dyfn_stub_table
-sbox_dyfn_stub_table:
+.global dyfn_stub_table
+dyfn_stub_table:
     gen_table_entry 0

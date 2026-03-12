@@ -23,14 +23,14 @@ test_inc = include_directories('test')
 dyfn_inc = include_directories('src/dyfn')
 
 if host_machine.cpu_family() == 'x86_64'
-  dyfn_asm = files('src/dyfn/sbox_dyfn_x86_64.S')
+  dyfn_asm = files('src/dyfn/dyfn_x86_64.S')
 elif host_machine.cpu_family() == 'aarch64'
-  dyfn_asm = files('src/dyfn/sbox_dyfn_aarch64.S')
+  dyfn_asm = files('src/dyfn/dyfn_aarch64.S')
 else
-  error('Unsupported architecture for sbox_dyfn')
+  error('Unsupported architecture for dyfn')
 endif
 
-dyfn_sources = [files('src/dyfn/sbox_dyfn.c', 'src/dyfn/sbox_dyfn_offsets_check.c'), dyfn_asm]
+dyfn_sources = [files('src/dyfn/dyfn.c', 'src/dyfn/dyfn_offsets_check.c'), dyfn_asm]
 
 # Process backend (pbox)
 dl_dep = meson.get_compiler('c').find_library('dl')

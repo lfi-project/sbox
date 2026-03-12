@@ -3,7 +3,7 @@
 
 #include <assert.h>
 #include <dlfcn.h>
-#include "sbox_dyfn.h"
+#include "dyfn.h"
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -22,10 +22,10 @@ static __thread struct PBoxChannel* tls_current_channel = NULL;
 
 // Called by assembly closure common handler.
 // Extracts args from saved registers, signals host, returns result.
-void sbox_dyfn_closure_dispatch(struct SboxDyfnClosureSavedRegs* saved,
-                                struct SboxDyfnClosureResult* result) {
-    struct SboxDyfnClosureInfo* info =
-        &sbox_dyfn_closure_info[saved->stub_index];
+void dyfn_closure_dispatch(struct DyfnClosureSavedRegs* saved,
+                                struct DyfnClosureResult* result) {
+    struct DyfnClosureInfo* info =
+        &dyfn_closure_info[saved->stub_index];
     struct PBoxChannel* ch = tls_current_channel;
 
     if (!ch)
@@ -38,10 +38,10 @@ void sbox_dyfn_closure_dispatch(struct SboxDyfnClosureSavedRegs* saved,
     int int_idx = 0, float_idx = 0;
     size_t offset = 0;
     for (int i = 0; i < info->nargs; i++) {
-        enum SboxDyfnClass cls = sbox_dyfn_classify(info->arg_types[i]);
-        size_t size = sbox_dyfn_type_size(info->arg_types[i]);
+        enum DyfnClass cls = dyfn_classify(info->arg_types[i]);
+        size_t size = dyfn_type_size(info->arg_types[i]);
         ch->args[i] = offset;
-        if (cls == SBOX_DYFN_CLASS_FLOAT || cls == SBOX_DYFN_CLASS_DOUBLE)
+        if (cls == DYFN_CLASS_FLOAT || cls == DYFN_CLASS_DOUBLE)
             memcpy(&ch->arg_storage[offset], &saved->float_regs[float_idx++],
                    size);
         else
@@ -57,12 +57,12 @@ void sbox_dyfn_closure_dispatch(struct SboxDyfnClosureSavedRegs* saved,
     pbox_wait_for_state(&ch->state, PBOX_STATE_REQUEST);
 
     // Copy result back
-    result->ret_class = sbox_dyfn_classify(info->ret_type);
-    size_t ret_size = sbox_dyfn_type_size(info->ret_type);
-    if (result->ret_class == SBOX_DYFN_CLASS_FLOAT ||
-        result->ret_class == SBOX_DYFN_CLASS_DOUBLE)
+    result->ret_class = dyfn_classify(info->ret_type);
+    size_t ret_size = dyfn_type_size(info->ret_type);
+    if (result->ret_class == DYFN_CLASS_FLOAT ||
+        result->ret_class == DYFN_CLASS_DOUBLE)
         memcpy(&result->float_val, ch->result_storage, ret_size);
-    else if (result->ret_class != SBOX_DYFN_CLASS_VOID)
+    else if (result->ret_class != DYFN_CLASS_VOID)
         memcpy(&result->int_val, ch->result_storage, ret_size);
 }
 
@@ -104,15 +104,15 @@ static bool do_ffi_call(struct PBoxChannel* ch) {
         arg_values[i] = &ch->arg_storage[ch->args[i]];
     }
 
-    struct SboxDyfnCallArgs call;
-    sbox_dyfn_prep_call(&call, (void*) (uintptr_t) ch->func_addr,
-                        (enum SboxDyfnType) ch->ret_type, ch->nargs,
-                        (const enum SboxDyfnType*) ch->arg_types, arg_values);
+    struct DyfnCallArgs call;
+    dyfn_prep_call(&call, (void*) (uintptr_t) ch->func_addr,
+                        (enum DyfnType) ch->ret_type, ch->nargs,
+                        (const enum DyfnType*) ch->arg_types, arg_values);
 
-    struct SboxDyfnCallResult result;
-    sbox_dyfn_call(&call, &result);
+    struct DyfnCallResult result;
+    dyfn_call(&call, &result);
 
-    sbox_dyfn_store_result(&result, (enum SboxDyfnType) ch->ret_type,
+    dyfn_store_result(&result, (enum DyfnType) ch->ret_type,
                            ch->result_storage);
     return true;
 }
@@ -167,7 +167,7 @@ int pbox_spawn_worker(int shm_fd) {
 static void dispatch_loop(struct PBoxChannel* ch, bool is_control) {
     // Set TLS for callback closures
     tls_current_channel = ch;
-    sbox_dyfn_closure_free_all();
+    dyfn_closure_free_all();
 
     while (1) {
         // Wait for a request (or exit signal)
@@ -176,7 +176,7 @@ static void dispatch_loop(struct PBoxChannel* ch, bool is_control) {
             if (state == PBOX_STATE_REQUEST)
                 break;
             if (state == PBOX_STATE_EXIT) {
-                sbox_dyfn_closure_free_all();
+                dyfn_closure_free_all();
                 return;
             }
             pbox_futex_wait(&ch->state, state);
@@ -207,11 +207,11 @@ static void dispatch_loop(struct PBoxChannel* ch, bool is_control) {
                 }
                 break;
             case PBOX_REQ_CREATE_CLOSURE: {
-                void* stub = sbox_dyfn_closure_alloc(
+                void* stub = dyfn_closure_alloc(
                     ch->closure_callback_id,
-                    (enum SboxDyfnType) ch->closure_ret_type,
+                    (enum DyfnType) ch->closure_ret_type,
                     ch->closure_nargs,
-                    (const enum SboxDyfnType*) ch->closure_arg_types);
+                    (const enum DyfnType*) ch->closure_arg_types);
                 ch->closure_addr = (uintptr_t) stub;
                 break;
             }

@@ -1,6 +1,6 @@
 bench_pbox = executable('bench_pbox',
   'lib_bench.c',
-  link_with: libpbox_sandbox,
+  link_with: libpbox_sandbox_nocb,
   link_args: ['-rdynamic'],
   include_directories: pbox_inc,
   dependencies: [dl_dep],

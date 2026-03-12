@@ -67,6 +67,8 @@ dyfn_call:
     pop  %rbp
     ret
 
+#ifndef SBOX_NO_CALLBACKS
+
 // --- Closure stubs ---
 
 .altmacro
@@ -150,3 +152,5 @@ dyfn_closure_common:
 .global dyfn_stub_table
 dyfn_stub_table:
     gen_table_entry 0
+
+#endif // SBOX_NO_CALLBACKS

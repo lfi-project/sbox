@@ -1,6 +1,6 @@
 add_pbox = executable('add_pbox',
   'lib_add.c',
-  link_with: libpbox_sandbox,
+  link_with: libpbox_sandbox_nocb,
   link_args: ['-rdynamic'],
   include_directories: pbox_inc,
   dependencies: [dl_dep],

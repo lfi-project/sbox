@@ -10,7 +10,7 @@ libthreads = shared_library('threads',
 # Sandbox executable for process backend
 threads_sandbox = executable('threads_sandbox',
   'lib_threads.c',
-  link_with: libpbox_sandbox,
+  link_with: libpbox_sandbox_nocb,
   link_args: ['-rdynamic'],
   dependencies: [dl_dep],
   install: false,

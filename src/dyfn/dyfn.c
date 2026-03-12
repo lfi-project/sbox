@@ -2,8 +2,10 @@
 
 #include <string.h>
 
+#ifndef SBOX_NO_CALLBACKS
 __thread struct DyfnClosureInfo dyfn_closure_info[DYFN_MAX_CLOSURES];
 __thread int dyfn_closure_count = 0;
+#endif
 
 enum DyfnClass dyfn_classify(enum DyfnType type) {
     switch (type) {
@@ -88,6 +90,8 @@ void dyfn_store_result(const struct DyfnCallResult* result,
         memcpy(out, &result->int_val, size);
 }
 
+#ifndef SBOX_NO_CALLBACKS
+
 void* dyfn_closure_alloc(int callback_id, enum DyfnType ret_type, int nargs,
                          const enum DyfnType* arg_types) {
     if (dyfn_closure_count >= DYFN_MAX_CLOSURES)
@@ -108,3 +112,5 @@ void* dyfn_closure_alloc(int callback_id, enum DyfnType ret_type, int nargs,
 void dyfn_closure_free_all(void) {
     dyfn_closure_count = 0;
 }
+
+#endif // SBOX_NO_CALLBACKS

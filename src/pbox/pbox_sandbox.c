@@ -18,12 +18,12 @@ static int g_sock_fd;
 // Thread-local storage for current channel (used by callback closures)
 static __thread struct PBoxChannel* tls_current_channel = NULL;
 
-
+#ifndef SBOX_NO_CALLBACKS
 
 // Called by assembly closure common handler.
 // Extracts args from saved registers, signals host, returns result.
 void dyfn_closure_dispatch(struct DyfnClosureSavedRegs* saved,
-                                struct DyfnClosureResult* result) {
+                           struct DyfnClosureResult* result) {
     struct DyfnClosureInfo* info =
         &dyfn_closure_info[saved->stub_index];
     struct PBoxChannel* ch = tls_current_channel;
@@ -65,6 +65,7 @@ void dyfn_closure_dispatch(struct DyfnClosureSavedRegs* saved,
     else if (result->ret_class != DYFN_CLASS_VOID)
         memcpy(&result->int_val, ch->result_storage, ret_size);
 }
+#endif // SBOX_NO_CALLBACKS
 
 // Receive a file descriptor over a Unix socket
 static int recv_fd(int sock_fd) {
@@ -165,9 +166,10 @@ int pbox_spawn_worker(int shm_fd) {
 
 // Main dispatch loop - handles requests until EXIT state
 static void dispatch_loop(struct PBoxChannel* ch, bool is_control) {
-    // Set TLS for callback closures
     tls_current_channel = ch;
+#ifndef SBOX_NO_CALLBACKS
     dyfn_closure_free_all();
+#endif
 
     while (1) {
         // Wait for a request (or exit signal)
@@ -176,7 +178,9 @@ static void dispatch_loop(struct PBoxChannel* ch, bool is_control) {
             if (state == PBOX_STATE_REQUEST)
                 break;
             if (state == PBOX_STATE_EXIT) {
+#ifndef SBOX_NO_CALLBACKS
                 dyfn_closure_free_all();
+#endif
                 return;
             }
             pbox_futex_wait(&ch->state, state);
@@ -206,6 +210,7 @@ static void dispatch_loop(struct PBoxChannel* ch, bool is_control) {
                     pbox_spawn_worker(ch->worker_shm_fd);
                 }
                 break;
+#ifndef SBOX_NO_CALLBACKS
             case PBOX_REQ_CREATE_CLOSURE: {
                 void* stub = dyfn_closure_alloc(
                     ch->closure_callback_id,
@@ -215,6 +220,7 @@ static void dispatch_loop(struct PBoxChannel* ch, bool is_control) {
                 ch->closure_addr = (uintptr_t) stub;
                 break;
             }
+#endif
             default:
                 assert(!"unhandled request_type");
                 break;

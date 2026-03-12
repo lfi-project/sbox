@@ -9,7 +9,7 @@ libinout = shared_library('inout',
 # Sandbox executable for process backend
 inout_sandbox = executable('inout_sandbox',
   'lib_inout.c',
-  link_with: libpbox_sandbox,
+  link_with: libpbox_sandbox_nocb,
   link_args: ['-rdynamic'],
   dependencies: [dl_dep],
   install: false,

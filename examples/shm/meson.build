@@ -9,7 +9,7 @@ libshm = shared_library('shm',
 # Sandbox executable for process backend
 shm_sandbox = executable('shm_sandbox',
   'lib_shm.c',
-  link_with: libpbox_sandbox,
+  link_with: libpbox_sandbox_nocb,
   link_args: ['-rdynamic'],
   dependencies: [dl_dep],
   install: false,

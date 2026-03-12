@@ -44,11 +44,21 @@ libpbox = library('pbox',
   install: false,
 )
 
+pbox_sandbox_sources = files('src/pbox/pbox_sandbox.c', 'src/pbox/pbox_seccomp.c')
+
 libpbox_sandbox = static_library('pbox_sandbox',
-  'src/pbox/pbox_sandbox.c',
-  'src/pbox/pbox_seccomp.c',
+  pbox_sandbox_sources,
   dyfn_sources,
   include_directories: [pbox_inc, dyfn_inc],
+  dependencies: [dl_dep],
+  install: false,
+)
+
+libpbox_sandbox_nocb = static_library('pbox_sandbox_nocb',
+  pbox_sandbox_sources,
+  dyfn_sources,
+  include_directories: [pbox_inc, dyfn_inc],
+  c_args: ['-DSBOX_NO_CALLBACKS'],
   dependencies: [dl_dep],
   install: false,
 )

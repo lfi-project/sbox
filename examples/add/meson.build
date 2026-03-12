@@ -11,7 +11,7 @@ libadd = shared_library('add',
 # Sandbox executable for process backend
 add_sandbox = executable('add_sandbox',
   'lib_add.c',
-  link_with: libpbox_sandbox,
+  link_with: libpbox_sandbox_nocb,
   link_args: ['-rdynamic'],
   dependencies: [dl_dep],
   install: false,

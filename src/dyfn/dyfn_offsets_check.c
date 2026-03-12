@@ -21,6 +21,7 @@ CHECK(struct DyfnCallArgs, ret_class,   DYFN_CALL_RET_CLASS);
 CHECK(struct DyfnCallResult, int_val,   DYFN_RESULT_INT_VAL);
 CHECK(struct DyfnCallResult, float_val, DYFN_RESULT_FLOAT_VAL);
 
+#ifndef SBOX_NO_CALLBACKS
 // DyfnClosureSavedRegs
 CHECK(struct DyfnClosureSavedRegs, int_regs,   DYFN_SAVED_INT_REGS);
 CHECK(struct DyfnClosureSavedRegs, float_regs, DYFN_SAVED_FLOAT_REGS);
@@ -40,3 +41,4 @@ _Static_assert(DYFN_CLOSURE_FRAME_SIZE % 16 == 0,
                "DYFN_CLOSURE_FRAME_SIZE must be 16-byte aligned");
 _Static_assert(DYFN_MAX_CLOSURES_ASM == DYFN_MAX_CLOSURES,
                "DYFN_MAX_CLOSURES_ASM must match DYFN_MAX_CLOSURES");
+#endif

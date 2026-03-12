@@ -54,6 +54,26 @@ struct DyfnCallResult {
     double float_val;
 };
 
+// Classify a type into INT/FLOAT/DOUBLE/VOID
+enum DyfnClass dyfn_classify(enum DyfnType type);
+
+// Get size of a type in bytes
+size_t dyfn_type_size(enum DyfnType type);
+
+// Prepare call: classify args, fill register arrays
+bool dyfn_prep_call(struct DyfnCallArgs* call, void* func,
+                    enum DyfnType ret_type, int nargs,
+                    const enum DyfnType* arg_types, void** arg_values);
+
+// Store result from DyfnCallResult into a buffer based on ret_type
+void dyfn_store_result(const struct DyfnCallResult* result,
+                       enum DyfnType ret_type, void* out);
+
+// Assembly: perform the call
+extern void dyfn_call(struct DyfnCallArgs* args, struct DyfnCallResult* result);
+
+#ifndef SBOX_NO_CALLBACKS
+
 // Saved register state from closure invocation (filled by asm, read by C)
 struct DyfnClosureSavedRegs {
     uint64_t int_regs[8];
@@ -77,24 +97,6 @@ struct DyfnClosureInfo {
     bool active;
 };
 
-// Classify a type into INT/FLOAT/DOUBLE/VOID
-enum DyfnClass dyfn_classify(enum DyfnType type);
-
-// Get size of a type in bytes
-size_t dyfn_type_size(enum DyfnType type);
-
-// Prepare call: classify args, fill register arrays
-bool dyfn_prep_call(struct DyfnCallArgs* call, void* func,
-                    enum DyfnType ret_type, int nargs,
-                    const enum DyfnType* arg_types, void** arg_values);
-
-// Store result from DyfnCallResult into a buffer based on ret_type
-void dyfn_store_result(const struct DyfnCallResult* result,
-                       enum DyfnType ret_type, void* out);
-
-// Assembly: perform the call
-extern void dyfn_call(struct DyfnCallArgs* args, struct DyfnCallResult* result);
-
 // Closure management (thread-local)
 extern __thread struct DyfnClosureInfo
     dyfn_closure_info[DYFN_MAX_CLOSURES];
@@ -106,6 +108,8 @@ void dyfn_closure_free_all(void);
 
 // Assembly: table of closure stub function pointers
 extern void* dyfn_stub_table[DYFN_MAX_CLOSURES];
+
+#endif // SBOX_NO_CALLBACKS
 
 #ifdef __cplusplus
 }

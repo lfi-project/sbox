@@ -11,7 +11,7 @@ libbench = shared_library('bench',
 # Sandbox executable for process backend
 bench_sandbox = executable('bench_sandbox',
   'lib_bench.c',
-  link_with: libpbox_sandbox,
+  link_with: libpbox_sandbox_nocb,
   link_args: ['-rdynamic'],
   dependencies: [dl_dep],
   install: false,

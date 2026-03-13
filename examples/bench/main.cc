@@ -60,7 +60,7 @@ int main() {
     // Benchmark 2: Function call with callback
     {
         auto call_with_cb = sandbox.fn<int(int, void*)>("call_with_callback");
-        void* cb = sandbox.register_callback(double_value);
+        auto cb = sandbox.register_callback(double_value);
 
         // Warmup
         for (int i = 0; i < 100; i++) {

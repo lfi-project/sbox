@@ -6,7 +6,7 @@
     printf("== Array / memory operations ==\n");
 
     TEST("fill_ints + sum_ints");
-    int* arr = sandbox.template alloc<int>(10);
+    auto arr = sandbox.template alloc<int>(10);
     sandbox.call<void(int*, int, int)>("fill_ints", arr, 10, 0);
     int host_arr[10];
     sandbox.copy_from(host_arr, arr, sizeof(int) * 10);
@@ -29,7 +29,7 @@
     printf("== calloc / realloc ==\n");
 
     TEST("calloc zeroes memory");
-    int* zarr = sandbox.template calloc<int>(4);
+    auto zarr = sandbox.template calloc<int>(4);
     int host_zarr[4];
     sandbox.copy_from(host_zarr, zarr, sizeof(int) * 4);
     for (int i = 0; i < 4; i++) {
@@ -54,7 +54,7 @@
 
     TEST("repeated alloc/free (100 cycles)");
     for (int i = 0; i < 100; i++) {
-        int* tmp = sandbox.template alloc<int>(16);
+        auto tmp = sandbox.template alloc<int>(16);
         sandbox.call<void(int*, int, int)>("fill_ints", tmp, 16, i);
         int s = sandbox.call<int(int*, int)>("sum_ints", tmp, 16);
         // sum of [i, i+1, ..., i+15] = 16*i + 120

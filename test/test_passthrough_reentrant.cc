@@ -21,7 +21,7 @@ int main() {
 
     TEST("callback calls back into sandbox");
     // Register a callback that itself calls sandbox.call("add", value, 100)
-    void* cb = sandbox.register_callback(reentrant_callback);
+    auto cb = sandbox.register_callback(reentrant_callback);
     sandbox.call<void(int (*)(int))>("set_reentrant_callback", cb);
     // call_reentrant(5) -> reentrant_callback(5) -> add(5, 100) = 105 -> +10 =
     // 115
@@ -47,7 +47,7 @@ int main() {
 
     TEST("register callback 64 times");
     for (int i = 0; i < 64; i++) {
-        void* tmp_cb = sandbox.register_callback(stress_add_callback);
+        auto tmp_cb = sandbox.register_callback(stress_add_callback);
         assert(tmp_cb != nullptr);
         int r = sandbox.call<int(int (*)(int, int), int, int)>(
             "apply_binary_callback", tmp_cb, i, 1);

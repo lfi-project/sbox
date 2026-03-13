@@ -214,6 +214,31 @@ int apply_quad_callback(quad_callback_t cb, int a, int b, int c, int d) {
     return cb(a, b, c, d);
 }
 
+// -- Callback with pointer argument --
+
+typedef int (*ptr_callback_t)(int*, int);
+
+int apply_ptr_callback(ptr_callback_t cb, int* data, int count) {
+    return cb(data, count);
+}
+
+// -- Callback with double* argument --
+
+typedef double (*double_ptr_callback_t)(double*, int);
+
+double apply_double_ptr_callback(double_ptr_callback_t cb, double* data,
+                                 int count) {
+    return cb(data, count);
+}
+
+// -- Callback that mutates data through pointer --
+
+typedef void (*mutate_callback_t)(int*, int);
+
+void apply_mutate_callback(mutate_callback_t cb, int* data, int count) {
+    cb(data, count);
+}
+
 // -- Memory pattern --
 
 void fill_ints(int* arr, int count, int value) {

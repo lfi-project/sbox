@@ -100,6 +100,10 @@ void* pbox_idmem_alloc(struct PBox* box, size_t size);
 // region
 void pbox_idmem_reset(struct PBox* box);
 
+// Check if [ptr, ptr+size) falls within any identity-mapped region
+// Returns 1 if valid, 0 otherwise
+int pbox_in_idmem(struct PBox* box, const void* ptr, size_t size);
+
 // Send a file descriptor to the sandbox
 // Returns the fd number in the sandbox, or -1 on error
 int pbox_send_fd(struct PBox* box, int fd);

@@ -6,8 +6,8 @@
     printf("== Strings ==\n");
 
     TEST("process_string echo");
-    char* buf = sandbox.copy_string("Hello, sandbox!");
-    char* echoed = sandbox.call<char*(char*)>("process_string", buf);
+    auto buf = sandbox.copy_string("Hello, sandbox!");
+    sbox::sbox<char*> echoed = sandbox.call<char*(char*)>("process_string", buf);
     char host_buf[256];
     sandbox.copy_from(host_buf, echoed, 16);
     assert(strcmp(host_buf, "Hello, sandbox!") == 0);
@@ -33,8 +33,8 @@
     PASS();
 
     TEST("copy_string round-trip");
-    char* str = sandbox.copy_string("test string");
-    char* echoed2 = sandbox.call<char*(char*)>("process_string", str);
+    auto str = sandbox.copy_string("test string");
+    sbox::sbox<char*> echoed2 = sandbox.call<char*(char*)>("process_string", str);
     char result_buf[256];
     sandbox.copy_from(result_buf, echoed2, 12);
     assert(strcmp(result_buf, "test string") == 0);

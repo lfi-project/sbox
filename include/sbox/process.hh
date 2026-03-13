@@ -92,6 +92,12 @@ struct pbox_type<T*> {
     static constexpr PBoxType value = PBOX_TYPE_POINTER;
 };
 
+// sbox<T*> maps to PBOX_TYPE_POINTER (for callbacks with sbox pointer args)
+template<typename T>
+struct pbox_type<sbox<T*>> {
+    static constexpr PBoxType value = PBOX_TYPE_POINTER;
+};
+
 template<typename T>
 inline constexpr PBoxType pbox_type_v = pbox_type<T>::value;
 
@@ -128,7 +134,12 @@ public:
             fprintf(stderr, "sbox: symbol not found: %s\n", name);
             abort();
         }
-        return call_ptr_sig<Sig>(fn, args...);
+        using Ret = detail::sig_return_t<Sig>;
+        if constexpr (std::is_void_v<Ret>) {
+            call_ptr_sig<Sig>(fn, args...);
+        } else {
+            return detail::wrap_sbox_return(call_ptr_sig<Sig>(fn, args...));
+        }
     }
 
     // Call with TypedName (signature deduced from declaration)
@@ -136,6 +147,10 @@ public:
     auto call(TypedName<Ret (*)(Params...)> tn, Args... args) {
         static_assert(sizeof...(Params) == sizeof...(Args),
                       "Wrong number of arguments for sandboxed function");
+        static_assert(
+            (detail::check_sbox_ptr_arg_v<Params, Args> && ...),
+            "Pointer arguments must be sbox<T*> or sbox_safe<T*> with a "
+            "matching type");
         return call<Ret(Params...)>(tn.name, args...);
     }
 
@@ -170,24 +185,59 @@ public:
         return call_impl<Ret, Args...>(fn, args...);
     }
 
-    // Memory allocation in sandbox
+    // Memory allocation in sandbox. Returns sbox<T*> (unchecked) since the
+    // pointer is in the sandbox's address space (not directly dereferenceable).
     template<typename T>
-    T* alloc(size_t count = 1) {
-        return static_cast<T*>(pbox_malloc(box_, sizeof(T) * count));
+    sbox<T*> alloc(size_t count = 1) {
+        return sbox<T*>(static_cast<T*>(pbox_malloc(box_, sizeof(T) * count)));
     }
 
     template<typename T>
-    T* calloc(size_t count) {
-        return static_cast<T*>(pbox_calloc(box_, count, sizeof(T)));
+    sbox<T*> calloc(size_t count) {
+        return sbox<T*>(
+            static_cast<T*>(pbox_calloc(box_, count, sizeof(T))));
     }
 
     template<typename T>
-    T* realloc(T* ptr, size_t count) {
-        return static_cast<T*>(pbox_realloc(box_, ptr, sizeof(T) * count));
+    sbox<T*> realloc(sbox<T*> ptr, size_t count) {
+        return sbox<T*>(static_cast<T*>(pbox_realloc(
+            box_, ptr.unsafe_unverified(), sizeof(T) * count)));
+    }
+
+    // Identity-mapped allocation (host-dereferenceable).
+    // Uses arena allocator — cannot be individually freed.
+    template<typename T>
+    sbox_safe<T*> alloc_idmem(size_t count = 1) {
+        return sbox_safe<T*>(
+            static_cast<T*>(pbox_idmem_alloc(box_, sizeof(T) * count)));
     }
 
     void free(void* ptr) {
         pbox_free(box_, ptr);
+    }
+
+    template<typename T>
+    void free(sbox<T*> p) {
+        pbox_free(box_, p.unsafe_unverified());
+    }
+    template<typename T>
+    void free(sbox_safe<T*> p) {
+        free(sbox<T*>(p));
+    }
+
+    // Verify an unchecked sandbox pointer (promote to sbox_safe).
+    // Checks that the pointer falls within an identity-mapped region.
+    template<typename T>
+    sbox_safe<T*> verify(sbox<T*> ptr, size_t count) {
+        T* raw = ptr.unsafe_unverified();
+        if (raw && !pbox_in_idmem(box_, raw, sizeof(T) * count)) {
+            fprintf(stderr,
+                    "sbox: verify failed: pointer %p not in "
+                    "identity-mapped region\n",
+                    static_cast<void*>(raw));
+            abort();
+        }
+        return sbox_safe<T*>(raw);
     }
 
     // Memory mapping
@@ -234,23 +284,41 @@ public:
         pbox_copy_to(box_, sandbox_dest, host_src, n);
     }
 
+    template<typename T>
+    void copy_to(sbox<T*> sandbox_dest, const void* host_src, size_t n) {
+        pbox_copy_to(box_, sandbox_dest.unsafe_unverified(), host_src, n);
+    }
+    template<typename T>
+    void copy_to(sbox_safe<T*> d, const void* s, size_t n) {
+        copy_to(sbox<T*>(d), s, n);
+    }
+
     void copy_from(void* host_dest, const void* sandbox_src, size_t n) {
         pbox_copy_from(box_, host_dest, sandbox_src, n);
     }
 
+    template<typename T>
+    void copy_from(void* host_dest, sbox<T*> sandbox_src, size_t n) {
+        pbox_copy_from(box_, host_dest, sandbox_src.unsafe_unverified(), n);
+    }
+    template<typename T>
+    void copy_from(void* d, sbox_safe<T*> s, size_t n) {
+        copy_from(d, sbox<T*>(s), n);
+    }
+
     // String helper
-    char* copy_string(const char* s) {
+    sbox<char*> copy_string(const char* s) {
         size_t len = std::strlen(s) + 1;
-        char* buf = alloc<char>(len);
+        sbox<char*> buf = alloc<char>(len);
         if (!buf)
-            return nullptr;
+            return {};
         copy_to(buf, s, len);
         return buf;
     }
 
     // Register a callback
     template<typename Ret, typename... Args>
-    void* register_callback(Ret (*fn)(Args...)) {
+    sbox<Ret (*)(Args...)> register_callback(Ret (*fn)(Args...)) {
         constexpr int nargs = sizeof...(Args);
         static_assert(nargs <= PBOX_MAX_ARGS,
                       "Too many callback arguments (max is PBOX_MAX_ARGS)");
@@ -258,9 +326,17 @@ public:
         if constexpr (nargs > 0) {
             fill_arg_types<0, Args...>(arg_types);
         }
-        return pbox_register_callback(box_, reinterpret_cast<void*>(fn),
-                                      detail::pbox_type_v<Ret>, nargs,
-                                      nargs > 0 ? arg_types : nullptr);
+        void* raw = pbox_register_callback(box_, reinterpret_cast<void*>(fn),
+                                           detail::pbox_type_v<Ret>, nargs,
+                                           nargs > 0 ? arg_types : nullptr);
+        return sbox<Ret (*)(Args...)>(reinterpret_cast<Ret (*)(Args...)>(raw));
+    }
+
+    // Register a callback with thunk (for callbacks with sbox<T*> args)
+    template<auto fn>
+    auto register_callback() {
+        return register_callback(
+            &detail::callback_thunk_impl<decltype(fn), fn>::call);
     }
 
     // Process-specific
@@ -288,10 +364,14 @@ private:
         return call_impl<Ret, Params...>(fn, convert_arg<Params>(args)...);
     }
 
-    // Convert argument, using reinterpret_cast for function pointers
+    // Convert argument, unwrapping sbox types
     template<typename To, typename From>
     static To convert_arg(From arg) {
-        if constexpr (std::is_pointer_v<To> && std::is_pointer_v<From>) {
+        if constexpr (detail::is_sbox_ptr_v<From>) {
+            return reinterpret_cast<To>(arg.unsafe_unverified());
+        } else if constexpr (detail::is_sbox_safe_ptr_v<From>) {
+            return reinterpret_cast<To>(arg.data());
+        } else if constexpr (std::is_pointer_v<To> && std::is_pointer_v<From>) {
             return reinterpret_cast<To>(arg);
         } else {
             return static_cast<To>(arg);
@@ -306,6 +386,7 @@ private:
     // Actual pbox_call implementation
     template<typename Ret, typename... Args>
     Ret call_impl(void* fn, Args... args) {
+        detail::tls_current_sandbox = this;
         constexpr int nargs = sizeof...(Args);
         static_assert(nargs <= PBOX_MAX_ARGS,
                       "Too many arguments (max is PBOX_MAX_ARGS)");
@@ -446,8 +527,8 @@ inline CallContext<Process> Sandbox<Process>::context() {
 template<typename Sig, typename... Args>
 auto Sandbox<Process>::call(CallContext<Process>& ctx, const char* name,
                             Args... args) {
-    if constexpr (std::is_void_v<decltype(this->template call<Sig>(name,
-                                                                   args...))>) {
+    using Ret = detail::sig_return_t<Sig>;
+    if constexpr (std::is_void_v<Ret>) {
         this->template call<Sig>(name, args...);
         ctx.finalize();
     } else {
@@ -462,6 +543,10 @@ auto Sandbox<Process>::call(CallContext<Process>& ctx,
                             TypedName<Ret (*)(Params...)> tn, Args... args) {
     static_assert(sizeof...(Params) == sizeof...(Args),
                   "Wrong number of arguments for sandboxed function");
+    static_assert(
+        (detail::check_sbox_ptr_arg_v<Params, Args> && ...),
+        "Pointer arguments to sandboxed functions must use "
+        "sbox<T*> or sbox_safe<T*>, not raw pointers");
     return call<Ret(Params...)>(ctx, tn.name, args...);
 }
 

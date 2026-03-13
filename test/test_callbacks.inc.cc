@@ -7,7 +7,7 @@
 
     TEST("basic callback (void(int))");
     callback_value = 0;
-    void* cb = sandbox.register_callback(my_callback);
+    auto cb = sandbox.register_callback(my_callback);
     assert(cb != nullptr);
     sandbox.call<void(void (*)(int))>("set_callback", cb);
     sandbox.call<void(int)>("trigger_callback", 42);
@@ -21,7 +21,7 @@
     PASS();
 
     TEST("binary callback (int(int,int)) - add");
-    void* add_cb = sandbox.register_callback(my_add_callback);
+    auto add_cb = sandbox.register_callback(my_add_callback);
     assert(add_cb != nullptr);
     int cbr = sandbox.call<int(int (*)(int, int), int, int)>(
         "apply_binary_callback", add_cb, 10, 20);
@@ -29,7 +29,7 @@
     PASS();
 
     TEST("binary callback (int(int,int)) - multiply");
-    void* mul_cb = sandbox.register_callback(my_multiply_callback);
+    auto mul_cb = sandbox.register_callback(my_multiply_callback);
     assert(mul_cb != nullptr);
     cbr = sandbox.call<int(int (*)(int, int), int, int)>(
         "apply_binary_callback", mul_cb, 6, 7);
@@ -37,7 +37,7 @@
     PASS();
 
     TEST("double callback (double(double)) - double");
-    void* dbl_cb = sandbox.register_callback(my_double_callback);
+    auto dbl_cb = sandbox.register_callback(my_double_callback);
     assert(dbl_cb != nullptr);
     double dr = sandbox.call<double(double (*)(double), double)>(
         "apply_double_callback", dbl_cb, 3.14);
@@ -45,7 +45,7 @@
     PASS();
 
     TEST("double callback (double(double)) - square");
-    void* sq_cb = sandbox.register_callback(my_square_callback);
+    auto sq_cb = sandbox.register_callback(my_square_callback);
     assert(sq_cb != nullptr);
     dr = sandbox.call<double(double (*)(double), double)>(
         "apply_double_callback", sq_cb, 5.0);
@@ -53,10 +53,58 @@
     PASS();
 
     TEST("quad callback (int(int,int,int,int))");
-    void* quad_cb = sandbox.register_callback(my_quad_callback);
+    auto quad_cb = sandbox.register_callback(my_quad_callback);
     assert(quad_cb != nullptr);
     cbr = sandbox.call<int(int (*)(int, int, int, int), int, int, int, int)>(
         "apply_quad_callback", quad_cb, 3, 4, 5, 6);
     assert(cbr == 42);  // 3*4 + 5*6 = 12 + 30
+    PASS();
+
+    TEST("pointer callback (sbox<int*> arg)");
+    auto cb_arr = sandbox.template alloc_idmem<int>(4);
+    int cb_vals[4] = {10, 20, 30, 40};
+    sandbox.copy_to(cb_arr, cb_vals, sizeof(int) * 4);
+    auto ptr_cb = sandbox.template register_callback<my_ptr_sum_callback>();
+    assert(ptr_cb != nullptr);
+    cbr = sandbox.call<int(int (*)(int*, int), int*, int)>(
+        "apply_ptr_callback", ptr_cb, cb_arr, 4);
+    assert(cbr == 100);
+    sandbox.idmem_reset();
+    PASS();
+
+    TEST("double pointer callback (sbox<double*> arg)");
+    {
+        auto darr = sandbox.template alloc_idmem<double>(3);
+        double dvals[3] = {1.5, 2.5, 3.0};
+        sandbox.copy_to(darr, dvals, sizeof(double) * 3);
+        auto dptr_cb =
+            sandbox.template register_callback<my_double_ptr_sum_callback>();
+        assert(dptr_cb != nullptr);
+        double dsum =
+            sandbox.call<double(double (*)(double*, int), double*, int)>(
+                "apply_double_ptr_callback", dptr_cb, darr, 3);
+        assert(fabs(dsum - 7.0) < 1e-9);
+        sandbox.idmem_reset();
+    }
+    PASS();
+
+    TEST("mutating pointer callback (sbox<int*> write)");
+    {
+        auto marr = sandbox.template alloc_idmem<int>(3);
+        int mvals[3] = {5, 10, 15};
+        sandbox.copy_to(marr, mvals, sizeof(int) * 3);
+        auto mut_cb =
+            sandbox.template register_callback<my_mutate_callback>();
+        assert(mut_cb != nullptr);
+        sandbox.call<void(void (*)(int*, int), int*, int)>(
+            "apply_mutate_callback", mut_cb, marr, 3);
+        // Verify the callback doubled each element
+        int result[3];
+        sandbox.copy_from(result, marr, sizeof(int) * 3);
+        assert(result[0] == 10);
+        assert(result[1] == 20);
+        assert(result[2] == 30);
+        sandbox.idmem_reset();
+    }
     PASS();
 }

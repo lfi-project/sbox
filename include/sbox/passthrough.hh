@@ -140,7 +140,12 @@ public:
             fprintf(stderr, "sbox: symbol not found: %s\n", name);
             abort();
         }
-        return call_ptr_sig<Sig>(fn, args...);
+        using Ret = detail::sig_return_t<Sig>;
+        if constexpr (std::is_void_v<Ret>) {
+            call_ptr_sig<Sig>(fn, args...);
+        } else {
+            return detail::wrap_sbox_return(call_ptr_sig<Sig>(fn, args...));
+        }
     }
 
     // Call with TypedName (dynamic mode, signature deduced from declaration)
@@ -148,21 +153,31 @@ public:
     auto call(TypedName<Ret (*)(Params...)> tn, Args... args) {
         static_assert(sizeof...(Params) == sizeof...(Args),
                       "Wrong number of arguments for sandboxed function");
+        static_assert(
+            (detail::check_sbox_ptr_arg_v<Params, Args> && ...),
+            "Pointer arguments must be sbox<T*> or sbox_safe<T*> with a "
+            "matching type");
         return call<Ret(Params...)>(tn.name, args...);
     }
 
-    // Call a function by pointer (static mode) - zero overhead
+    // Call a function by pointer (static mode)
     template<typename Sig, typename... Args>
     auto call(Sig* fn, Args... args) {
-        return fn(args...);
+        detail::tls_current_sandbox = this;
+        if constexpr (std::is_void_v<
+                          decltype(fn(detail::unwrap_sbox_arg(args)...))>) {
+            fn(detail::unwrap_sbox_arg(args)...);
+        } else {
+            return detail::wrap_sbox_return(
+                fn(detail::unwrap_sbox_arg(args)...));
+        }
     }
 
     // Context-aware call by name
     template<typename Sig, typename... Args>
-    auto call(CallContext<Passthrough>& ctx, const char* name, Args... args)
-        -> decltype(this->template call<Sig>(name, args...)) {
-        if constexpr (std::is_void_v<decltype(this->template call<Sig>(
-                          name, args...))>) {
+    auto call(CallContext<Passthrough>& ctx, const char* name, Args... args) {
+        using Ret = detail::sig_return_t<Sig>;
+        if constexpr (std::is_void_v<Ret>) {
             this->template call<Sig>(name, args...);
             ctx.finalize();
         } else {
@@ -178,17 +193,23 @@ public:
               Args... args) {
         static_assert(sizeof...(Params) == sizeof...(Args),
                       "Wrong number of arguments for sandboxed function");
+        static_assert(
+            (detail::check_sbox_ptr_arg_v<Params, Args> && ...),
+            "Pointer arguments must be sbox<T*> or sbox_safe<T*> with a "
+            "matching type");
         return call<Ret(Params...)>(ctx, tn.name, args...);
     }
 
     // Context-aware call by pointer (static mode)
     template<typename Sig, typename... Args>
     auto call(CallContext<Passthrough>& ctx, Sig* fn, Args... args) {
-        if constexpr (std::is_void_v<decltype(fn(args...))>) {
-            fn(args...);
+        if constexpr (std::is_void_v<
+                          decltype(fn(detail::unwrap_sbox_arg(args)...))>) {
+            fn(detail::unwrap_sbox_arg(args)...);
             ctx.finalize();
         } else {
-            auto result = fn(args...);
+            auto result = detail::wrap_sbox_return(
+                fn(detail::unwrap_sbox_arg(args)...));
             ctx.finalize();
             return result;
         }
@@ -221,29 +242,55 @@ public:
     // Call via function pointer (used by FnHandle)
     template<typename Ret, typename... Args>
     Ret call_ptr(void* fn, Args... args) {
+        detail::tls_current_sandbox = this;
         using FnPtr = Ret (*)(Args...);
         return reinterpret_cast<FnPtr>(fn)(args...);
     }
 
     // Memory allocation within the "sandbox" (just regular malloc for
-    // passthrough)
+    // passthrough). Returns sbox_safe<T*> since all memory is in the same
+    // address space and directly dereferenceable.
     template<typename T>
-    T* alloc(size_t count = 1) {
-        return static_cast<T*>(std::malloc(sizeof(T) * count));
+    sbox_safe<T*> alloc(size_t count = 1) {
+        return sbox_safe<T*>(static_cast<T*>(std::malloc(sizeof(T) * count)));
     }
 
     template<typename T>
-    T* calloc(size_t count) {
-        return static_cast<T*>(std::calloc(count, sizeof(T)));
+    sbox_safe<T*> calloc(size_t count) {
+        return sbox_safe<T*>(static_cast<T*>(std::calloc(count, sizeof(T))));
     }
 
     template<typename T>
-    T* realloc(T* ptr, size_t count) {
-        return static_cast<T*>(std::realloc(ptr, sizeof(T) * count));
+    sbox_safe<T*> realloc(sbox_safe<T*> ptr, size_t count) {
+        return sbox_safe<T*>(
+            static_cast<T*>(std::realloc(ptr.data(), sizeof(T) * count)));
+    }
+
+    // Identity-mapped allocation (host-dereferenceable).
+    // For passthrough, all memory is in the same address space.
+    template<typename T>
+    sbox_safe<T*> alloc_idmem(size_t count = 1) {
+        return sbox_safe<T*>(static_cast<T*>(std::malloc(sizeof(T) * count)));
     }
 
     void free(void* ptr) {
         std::free(ptr);
+    }
+
+    template<typename T>
+    void free(sbox<T*> p) {
+        std::free(p.unsafe_unverified());
+    }
+    template<typename T>
+    void free(sbox_safe<T*> p) {
+        free(sbox<T*>(p));
+    }
+
+    // Verify an unchecked sandbox pointer (promote to sbox_safe).
+    // For passthrough, no bounds to check.
+    template<typename T>
+    sbox_safe<T*> verify(sbox<T*> ptr, size_t count) {
+        return sbox_safe<T*>(ptr.unsafe_unverified());
     }
 
     // Memory mapping
@@ -292,25 +339,50 @@ public:
         std::memcpy(sandbox_dest, host_src, n);
     }
 
+    template<typename T>
+    void copy_to(sbox<T*> sandbox_dest, const void* host_src, size_t n) {
+        std::memcpy(sandbox_dest.unsafe_unverified(), host_src, n);
+    }
+    template<typename T>
+    void copy_to(sbox_safe<T*> d, const void* s, size_t n) {
+        copy_to(sbox<T*>(d), s, n);
+    }
+
     void copy_from(void* host_dest, const void* sandbox_src, size_t n) {
         std::memcpy(host_dest, sandbox_src, n);
     }
 
+    template<typename T>
+    void copy_from(void* host_dest, sbox<T*> sandbox_src, size_t n) {
+        std::memcpy(host_dest, sandbox_src.unsafe_unverified(), n);
+    }
+    template<typename T>
+    void copy_from(void* d, sbox_safe<T*> s, size_t n) {
+        copy_from(d, sbox<T*>(s), n);
+    }
+
     // String helper
-    char* copy_string(const char* s) {
+    sbox_safe<char*> copy_string(const char* s) {
         size_t len = std::strlen(s) + 1;
-        char* buf = alloc<char>(len);
+        auto buf = alloc<char>(len);
         if (!buf)
-            return nullptr;
+            return {};
         copy_to(buf, s, len);
         return buf;
     }
 
-    // Register a callback (passthrough just returns the function pointer as
-    // void*)
-    template<typename Fn>
-    void* register_callback(Fn fn) {
-        return reinterpret_cast<void*>(+fn);
+    // Register a callback with thunk (for callbacks with sbox<T*> args)
+    template<auto fn>
+    auto register_callback() {
+        using Thunk = detail::callback_thunk_impl<decltype(fn), fn>;
+        using CType = typename Thunk::c_type;
+        return sbox<CType>(reinterpret_cast<CType>(&Thunk::call));
+    }
+
+    // Register a callback (passthrough just returns the function pointer)
+    template<typename Ret, typename... Args>
+    sbox<Ret (*)(Args...)> register_callback(Ret (*fn)(Args...)) {
+        return sbox<Ret (*)(Args...)>(fn);
     }
 
     // Escape hatch for advanced usage (returns dlopen handle)
@@ -319,10 +391,15 @@ public:
     }
 
 private:
-    // Convert argument, using reinterpret_cast for pointer conversions
+    // Convert argument, unwrapping sbox types and using reinterpret_cast for
+    // pointer conversions
     template<typename To, typename From>
     static To convert_arg(From arg) {
-        if constexpr (std::is_pointer_v<To> && std::is_pointer_v<From>) {
+        if constexpr (detail::is_sbox_ptr_v<From>) {
+            return reinterpret_cast<To>(arg.unsafe_unverified());
+        } else if constexpr (detail::is_sbox_safe_ptr_v<From>) {
+            return reinterpret_cast<To>(arg.data());
+        } else if constexpr (std::is_pointer_v<To> && std::is_pointer_v<From>) {
             return reinterpret_cast<To>(arg);
         } else {
             return static_cast<To>(arg);
@@ -333,6 +410,7 @@ private:
     // conversion
     template<typename Ret, typename... Params, typename... Args>
     Ret call_with_sig_impl(void* fn, Ret (*)(Params...), Args... args) {
+        detail::tls_current_sandbox = this;
         using FnPtr = Ret (*)(Params...);
         return reinterpret_cast<FnPtr>(fn)(convert_arg<Params>(args)...);
     }

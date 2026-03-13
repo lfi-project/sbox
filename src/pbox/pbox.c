@@ -1048,6 +1048,13 @@ void pbox_copy_to(struct PBox* box, void* dest, const void* src, size_t n) {
     if (!ch)
         return;
 
+    if (atomic_load(&ch->state) == PBOX_STATE_CALLBACK) {
+        fprintf(stderr,
+                "pbox: copy_to called during callback dispatch "
+                "(use identity-mapped memory instead)\n");
+        abort();
+    }
+
     uintptr_t sandbox_mem_storage =
         ch->sandbox_channel_addr + offsetof(struct PBoxChannel, mem_storage);
 
@@ -1125,6 +1132,26 @@ void pbox_idmem_reset(struct PBox* box) {
         tch->idmem_offset = 0;
 }
 
+int pbox_in_idmem(struct PBox* box, const void* ptr, size_t size) {
+    uintptr_t addr = (uintptr_t) ptr;
+    uintptr_t end = addr + size;
+
+    pthread_mutex_lock(&box->channel_lock);
+    for (size_t i = 0; i < box->channel_count; i++) {
+        struct PBoxThreadChannel* tch = box->channels[i];
+        if (tch->idmem_base) {
+            uintptr_t base = (uintptr_t) tch->idmem_base;
+            uintptr_t top = base + tch->idmem_size;
+            if (addr >= base && end <= top) {
+                pthread_mutex_unlock(&box->channel_lock);
+                return 1;
+            }
+        }
+    }
+    pthread_mutex_unlock(&box->channel_lock);
+    return 0;
+}
+
 void pbox_copy_from(struct PBox* box, void* dest, const void* src, size_t n) {
     if (!box->sym_memcpy)
         return;
@@ -1132,6 +1159,13 @@ void pbox_copy_from(struct PBox* box, void* dest, const void* src, size_t n) {
     struct PBoxChannel* ch = get_or_create_channel(box);
     if (!ch)
         return;
+
+    if (atomic_load(&ch->state) == PBOX_STATE_CALLBACK) {
+        fprintf(stderr,
+                "pbox: copy_from called during callback dispatch "
+                "(use identity-mapped memory instead)\n");
+        abort();
+    }
 
     uintptr_t sandbox_mem_storage =
         ch->sandbox_channel_addr + offsetof(struct PBoxChannel, mem_storage);

@@ -6,7 +6,7 @@
     printf("== Structs by pointer ==\n");
 
     TEST("point_init + point_sum");
-    Point* p = sandbox.template alloc<Point>(1);
+    auto p = sandbox.template alloc<Point>(1);
     sandbox.call<void(Point*, int, int)>("point_init", p, 10, 20);
     Point host_p;
     sandbox.copy_from(&host_p, p, sizeof(Point));
@@ -27,7 +27,7 @@
     PASS();
 
     TEST("complex_magnitude_sq");
-    Complex* c = sandbox.template alloc<Complex>(1);
+    auto c = sandbox.template alloc<Complex>(1);
     Complex host_c = {3.0, 4.0};
     sandbox.copy_to(c, &host_c, sizeof(Complex));
     double dr = sandbox.call<double(Complex*)>("complex_magnitude_sq", c);
@@ -39,9 +39,9 @@
 
     TEST("named_array_init + named_array_sum");
     // Allocate the struct, its name string, and its values array in sandbox
-    NamedArray* na = sandbox.template alloc<NamedArray>(1);
-    char* na_name = sandbox.copy_string("test_array");
-    int* na_vals = sandbox.template alloc<int>(4);
+    auto na = sandbox.template alloc<NamedArray>(1);
+    auto na_name = sandbox.copy_string("test_array");
+    auto na_vals = sandbox.template alloc<int>(4);
     int host_vals[4] = {10, 20, 30, 40};
     sandbox.copy_to(na_vals, host_vals, sizeof(int) * 4);
     // Initialize the struct (sets pointer fields inside sandbox)

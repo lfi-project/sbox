@@ -129,6 +129,29 @@ test('threads', test_threads,
   depends: [testlib],
 )
 
+# Compile-failure tests (verify that type errors are caught at compile time)
+compile_fail_script = find_program('test/test_compile_fail.sh')
+cxx_cmd = meson.get_compiler('cpp').cmd_array()
+
+compile_fail_tests = [
+  'wrong_callback_type',
+  'wrong_data_ptr_type',
+  'raw_pointer_arg',
+  'raw_callback_arg',
+]
+
+foreach t : compile_fail_tests
+  test('compile_fail_' + t, compile_fail_script,
+    args: cxx_cmd + [
+      '-std=c++17',
+      '-I' + meson.current_source_dir() / 'include',
+      '-c',
+      meson.current_source_dir() / 'test' / 'compile_fail' / t + '.cc',
+      '-o', '/dev/null',
+    ],
+  )
+endforeach
+
 # Examples
 subdir('examples/add')
 subdir('examples/callback')

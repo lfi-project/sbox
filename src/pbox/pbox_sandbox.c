@@ -34,19 +34,29 @@ void dyfn_closure_dispatch(struct DyfnClosureSavedRegs* saved,
     ch->callback_id = info->callback_id;
     ch->nargs = info->nargs;
 
-    // Extract args from saved registers using type info
-    int int_idx = 0, float_idx = 0;
+    // Extract args from saved registers using type info.
+    // Args beyond the register file spill into stack_args in declaration order.
+    int int_idx = 0, float_idx = 0, stack_idx = 0;
     size_t offset = 0;
     for (int i = 0; i < info->nargs; i++) {
         enum DyfnClass cls = dyfn_classify(info->arg_types[i]);
         size_t size = dyfn_type_size(info->arg_types[i]);
         ch->args[i] = offset;
-        if (cls == DYFN_CLASS_FLOAT || cls == DYFN_CLASS_DOUBLE)
-            memcpy(&ch->arg_storage[offset], &saved->float_regs[float_idx++],
-                   size);
-        else
-            memcpy(&ch->arg_storage[offset], &saved->int_regs[int_idx++],
-                   size);
+        if (cls == DYFN_CLASS_FLOAT || cls == DYFN_CLASS_DOUBLE) {
+            if (float_idx < DYFN_FLOAT_ARG_REGS)
+                memcpy(&ch->arg_storage[offset],
+                       &saved->float_regs[float_idx++], size);
+            else
+                memcpy(&ch->arg_storage[offset],
+                       &saved->stack_args[stack_idx++], size);
+        } else {
+            if (int_idx < DYFN_INT_ARG_REGS)
+                memcpy(&ch->arg_storage[offset],
+                       &saved->int_regs[int_idx++], size);
+            else
+                memcpy(&ch->arg_storage[offset],
+                       &saved->stack_args[stack_idx++], size);
+        }
         offset += size;
     }
 

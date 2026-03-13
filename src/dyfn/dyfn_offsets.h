@@ -17,7 +17,8 @@
 // DyfnClosureSavedRegs offsets.
 #define DYFN_SAVED_INT_REGS 0
 #define DYFN_SAVED_FLOAT_REGS 64
-#define DYFN_SAVED_STUB_INDEX 128
+#define DYFN_SAVED_STACK_ARGS 128
+#define DYFN_SAVED_STUB_INDEX 160
 
 // DyfnClosureResult offsets.
 #define DYFN_CLOSURE_INT_VAL 0
@@ -25,7 +26,7 @@
 #define DYFN_CLOSURE_RET_CLASS 16
 
 // Struct sizes (for assembly stack frame layout).
-#define DYFN_SIZEOF_CLOSURE_SAVED_REGS 136
+#define DYFN_SIZEOF_CLOSURE_SAVED_REGS 168
 #define DYFN_SIZEOF_CLOSURE_RESULT 24
 
 // Closure common handler frame size (must be 16-byte aligned).

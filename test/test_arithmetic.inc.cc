@@ -103,7 +103,7 @@
     assert(fabs(dr - 1.7) < 1e-9);
     PASS();
 
-    printf("== Max parameters (8 = PBOX_MAX_ARGS) ==\n");
+    printf("== Max parameters (10 = PBOX_MAX_ARGS) ==\n");
 
     TEST("sum8(1..8) == 36");
     int s8 = sandbox.call<int(int, int, int, int, int, int, int, int)>(
@@ -116,5 +116,33 @@
                              double, double)>("sum8_double", 1.0, 2.0, 3.0, 4.0,
                                               5.0, 6.0, 7.0, 8.0);
     assert(fabs(dr - 36.0) < 1e-9);
+    PASS();
+
+    TEST("sum9(1..9) == 45");
+    int s9 =
+        sandbox.call<int(int, int, int, int, int, int, int, int, int)>(
+            "sum9", 1, 2, 3, 4, 5, 6, 7, 8, 9);
+    assert(s9 == 45);
+    PASS();
+
+    TEST("sum10(1..10) == 55");
+    int s10 =
+        sandbox.call<int(int, int, int, int, int, int, int, int, int, int)>(
+            "sum10", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+    assert(s10 == 55);
+    PASS();
+
+    TEST("sum10_double(1.0..10.0) == 55.0");
+    dr = sandbox.call<double(double, double, double, double, double, double,
+                             double, double, double, double)>(
+        "sum10_double", 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0);
+    assert(fabs(dr - 55.0) < 1e-9);
+    PASS();
+
+    TEST("mixed10(1,2.0,3,4.0,5,6.0,7,8.0,9,10.0) == 55.0");
+    dr = sandbox.call<double(int, double, int, double, int, double, int, double,
+                             int, double)>(
+        "mixed10", 1, 2.0, 3, 4.0, 5, 6.0, 7, 8.0, 9, 10.0);
+    assert(fabs(dr - 55.0) < 1e-9);
     PASS();
 }

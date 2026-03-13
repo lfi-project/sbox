@@ -59,11 +59,17 @@ bool dyfn_prep_call(struct DyfnCallArgs* call, void* func,
         size_t size = dyfn_type_size(arg_types[i]);
 
         if (cls == DYFN_CLASS_FLOAT || cls == DYFN_CLASS_DOUBLE) {
-            memcpy(&call->float_regs[call->float_count], arg_values[i], size);
-            call->float_count++;
+            if (call->float_count < DYFN_FLOAT_ARG_REGS) {
+                memcpy(&call->float_regs[call->float_count], arg_values[i],
+                       size);
+                call->float_count++;
+            } else {
+                memcpy(&call->stack_args[call->stack_count], arg_values[i],
+                       size);
+                call->stack_count++;
+            }
         } else {
-#if defined(__x86_64__)
-            if (call->int_count < 6) {
+            if (call->int_count < DYFN_INT_ARG_REGS) {
                 memcpy(&call->int_regs[call->int_count], arg_values[i], size);
                 call->int_count++;
             } else {
@@ -71,10 +77,6 @@ bool dyfn_prep_call(struct DyfnCallArgs* call, void* func,
                        size);
                 call->stack_count++;
             }
-#elif defined(__aarch64__)
-            memcpy(&call->int_regs[call->int_count], arg_values[i], size);
-            call->int_count++;
-#endif
         }
     }
     return true;

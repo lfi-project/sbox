@@ -60,6 +60,24 @@
     assert(cbr == 42);  // 3*4 + 5*6 = 12 + 30
     PASS();
 
+    TEST("8-arg callback (int(int,int,int,int,int,int,int,int))");
+    auto sum8_cb = sandbox.register_callback(my_sum8_callback);
+    assert(sum8_cb != nullptr);
+    cbr = sandbox.call<int(int (*)(int, int, int, int, int, int, int, int),
+                           int, int, int, int, int, int, int, int)>(
+        "apply_callback8", sum8_cb, 1, 2, 3, 4, 5, 6, 7, 8);
+    assert(cbr == 36);
+    PASS();
+
+    TEST("9-arg callback (int(int,...,int) x9)");
+    auto sum9_cb = sandbox.register_callback(my_sum9_callback);
+    assert(sum9_cb != nullptr);
+    cbr = sandbox.call<int(int (*)(int, int, int, int, int, int, int, int, int),
+                           int, int, int, int, int, int, int, int, int)>(
+        "apply_callback9", sum9_cb, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+    assert(cbr == 45);
+    PASS();
+
     TEST("pointer callback (sbox<int*> arg)");
     auto cb_arr = sandbox.template alloc_idmem<int>(4);
     int cb_vals[4] = {10, 20, 30, 40};

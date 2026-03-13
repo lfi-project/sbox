@@ -22,6 +22,7 @@ CHECK(struct DyfnCallResult, float_val, DYFN_RESULT_FLOAT_VAL);
 #ifndef SBOX_NO_CALLBACKS
 CHECK(struct DyfnClosureSavedRegs, int_regs, DYFN_SAVED_INT_REGS);
 CHECK(struct DyfnClosureSavedRegs, float_regs, DYFN_SAVED_FLOAT_REGS);
+CHECK(struct DyfnClosureSavedRegs, stack_args, DYFN_SAVED_STACK_ARGS);
 CHECK(struct DyfnClosureSavedRegs, stub_index, DYFN_SAVED_STUB_INDEX);
 
 CHECK(struct DyfnClosureResult, int_val, DYFN_CLOSURE_INT_VAL);

@@ -23,7 +23,7 @@ enum PBoxType {
     PBOX_TYPE_POINTER
 };
 
-#define PBOX_MAX_ARGS 8
+#define PBOX_MAX_ARGS 10
 
 struct PBox;
 

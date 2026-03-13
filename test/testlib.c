@@ -134,7 +134,7 @@ double apply_double_callback(double_callback_t cb, double val) {
     return cb(val);
 }
 
-// -- Max parameters (8 = PBOX_MAX_ARGS) --
+// -- Many parameters (up to 10 = PBOX_MAX_ARGS) --
 
 int sum8(int a, int b, int c, int d, int e, int f, int g, int h) {
     return a + b + c + d + e + f + g + h;
@@ -143,6 +143,26 @@ int sum8(int a, int b, int c, int d, int e, int f, int g, int h) {
 double sum8_double(double a, double b, double c, double d, double e, double f,
                    double g, double h) {
     return a + b + c + d + e + f + g + h;
+}
+
+int sum9(int a, int b, int c, int d, int e, int f, int g, int h, int i) {
+    return a + b + c + d + e + f + g + h + i;
+}
+
+int sum10(int a, int b, int c, int d, int e, int f, int g, int h, int i,
+          int j) {
+    return a + b + c + d + e + f + g + h + i + j;
+}
+
+double sum10_double(double a, double b, double c, double d, double e, double f,
+                    double g, double h, double i, double j) {
+    return a + b + c + d + e + f + g + h + i + j;
+}
+
+// Mixed int/double to exercise both register files
+double mixed10(int a, double b, int c, double d, int e, double f, int g,
+               double h, int i, double j) {
+    return a + b + c + d + e + f + g + h + i + j;
 }
 
 // -- Pointer write + read-back --
@@ -212,6 +232,22 @@ typedef int (*quad_callback_t)(int, int, int, int);
 
 int apply_quad_callback(quad_callback_t cb, int a, int b, int c, int d) {
     return cb(a, b, c, d);
+}
+
+// -- Callbacks with many params (test stack arg passing) --
+
+typedef int (*callback9_t)(int, int, int, int, int, int, int, int, int);
+
+int apply_callback9(callback9_t cb, int a, int b, int c, int d, int e, int f,
+                    int g, int h, int i) {
+    return cb(a, b, c, d, e, f, g, h, i);
+}
+
+typedef int (*callback8_t)(int, int, int, int, int, int, int, int);
+
+int apply_callback8(callback8_t cb, int a, int b, int c, int d, int e, int f,
+                    int g, int h) {
+    return cb(a, b, c, d, e, f, g, h);
 }
 
 // -- Callback with pointer argument --

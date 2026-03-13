@@ -8,7 +8,15 @@
 extern "C" {
 #endif
 
-#define DYFN_MAX_ARGS 8
+#define DYFN_MAX_ARGS 10
+
+// Number of integer argument registers per architecture.
+#if defined(__x86_64__)
+#define DYFN_INT_ARG_REGS 6
+#elif defined(__aarch64__)
+#define DYFN_INT_ARG_REGS 8
+#endif
+#define DYFN_FLOAT_ARG_REGS 8
 #define DYFN_MAX_CLOSURES 64
 
 enum DyfnType {
@@ -74,6 +82,7 @@ extern void dyfn_call(struct DyfnCallArgs* args, struct DyfnCallResult* result);
 struct DyfnClosureSavedRegs {
     uint64_t int_regs[8];
     uint64_t float_regs[8];
+    uint64_t stack_args[4];
     int stub_index;
 };
 

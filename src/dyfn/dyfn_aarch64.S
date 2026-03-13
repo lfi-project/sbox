@@ -17,6 +17,24 @@ dyfn_call:
     ldp  d4, d5, [x19, #(DYFN_CALL_FLOAT_REGS + 32)]
     ldp  d6, d7, [x19, #(DYFN_CALL_FLOAT_REGS + 48)]
 
+    ldr  w10, [x19, #DYFN_CALL_STACK_COUNT]
+    cbz  w10, .Lno_stack
+
+    // Round up to even count for 16-byte sp alignment
+    add  w11, w10, #1
+    bic  w11, w11, #1
+    lsl  x11, x11, #3
+    sub  sp, sp, x11
+
+    add  x11, x19, #DYFN_CALL_STACK_ARGS
+    mov  x12, sp
+.Lcopy_stack:
+    ldr  x13, [x11], #8
+    str  x13, [x12], #8
+    subs w10, w10, #1
+    b.ne .Lcopy_stack
+.Lno_stack:
+
     ldp  x0, x1, [x19, #(DYFN_CALL_INT_REGS + 0)]
     ldp  x2, x3, [x19, #(DYFN_CALL_INT_REGS + 16)]
     ldp  x4, x5, [x19, #(DYFN_CALL_INT_REGS + 32)]
@@ -28,6 +46,7 @@ dyfn_call:
     str  x0, [x20, #DYFN_RESULT_INT_VAL]
     str  d0, [x20, #DYFN_RESULT_FLOAT_VAL]
 
+    mov  sp, x29
     ldp  x19, x20, [sp, #16]
     ldp  x29, x30, [sp], #32
     ret
@@ -56,11 +75,13 @@ gen_stubs 0
 // Common closure handler.
 // On entry: w9 = stub index, all arg registers live from caller.
 // x30 holds return address, sp is 16-byte aligned.
+// Caller's stack args (if any) are at [sp+0], [sp+8], ...
 //
-// Stack layout:
-//   x29, x30 save
-//   DyfnClosureSavedRegs
-//   DyfnClosureResul
+// Stack layout (offsets from sp after allocation):
+//   0   : x29, x30 save
+//   16  : DyfnClosureSavedRegs  (168 bytes)
+//   184 : DyfnClosureResult     (24 bytes)
+//   Total: 208 bytes (16-byte aligned)
 
 #define CLOSURE_TOTAL_SIZE (16 + DYFN_CLOSURE_FRAME_SIZE)
 #define SAVED_BASE  16
@@ -79,6 +100,11 @@ dyfn_closure_common:
     stp  d2, d3, [sp, #(SAVED_BASE + DYFN_SAVED_FLOAT_REGS + 16)]
     stp  d4, d5, [sp, #(SAVED_BASE + DYFN_SAVED_FLOAT_REGS + 32)]
     stp  d6, d7, [sp, #(SAVED_BASE + DYFN_SAVED_FLOAT_REGS + 48)]
+
+    ldp  x10, x11, [sp, #(CLOSURE_TOTAL_SIZE + 0)]
+    stp  x10, x11, [sp, #(SAVED_BASE + DYFN_SAVED_STACK_ARGS + 0)]
+    ldp  x10, x11, [sp, #(CLOSURE_TOTAL_SIZE + 16)]
+    stp  x10, x11, [sp, #(SAVED_BASE + DYFN_SAVED_STACK_ARGS + 16)]
 
     str  w9, [sp, #(SAVED_BASE + DYFN_SAVED_STUB_INDEX)]
 

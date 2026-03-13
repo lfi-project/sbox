@@ -28,6 +28,16 @@ static int my_quad_callback(int a, int b, int c, int d) {
     return a * b + c * d;
 }
 
+static int my_sum8_callback(int a, int b, int c, int d, int e, int f, int g,
+                             int h) {
+    return a + b + c + d + e + f + g + h;
+}
+
+static int my_sum9_callback(int a, int b, int c, int d, int e, int f, int g,
+                             int h, int i) {
+    return a + b + c + d + e + f + g + h + i;
+}
+
 // Callback that receives a pointer from the sandbox.
 // Takes sandbox as first parameter to verify the pointer.
 // Uses sbox<int*> to enforce that the pointer is treated as untrusted.

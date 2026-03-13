@@ -101,6 +101,16 @@ dyfn_closure_common:
     mov  %r8,  (SAVED_BASE + DYFN_SAVED_INT_REGS + 32)(%rsp)
     mov  %r9,  (SAVED_BASE + DYFN_SAVED_INT_REGS + 40)(%rsp)
 
+#define CALLER_STACK_BASE (DYFN_CLOSURE_FRAME_SIZE + 8 + 8)
+    mov  (CALLER_STACK_BASE + 0)(%rsp), %rax
+    mov  %rax, (SAVED_BASE + DYFN_SAVED_STACK_ARGS + 0)(%rsp)
+    mov  (CALLER_STACK_BASE + 8)(%rsp), %rax
+    mov  %rax, (SAVED_BASE + DYFN_SAVED_STACK_ARGS + 8)(%rsp)
+    mov  (CALLER_STACK_BASE + 16)(%rsp), %rax
+    mov  %rax, (SAVED_BASE + DYFN_SAVED_STACK_ARGS + 16)(%rsp)
+    mov  (CALLER_STACK_BASE + 24)(%rsp), %rax
+    mov  %rax, (SAVED_BASE + DYFN_SAVED_STACK_ARGS + 24)(%rsp)
+
     movsd %xmm0, (SAVED_BASE + DYFN_SAVED_FLOAT_REGS + 0)(%rsp)
     movsd %xmm1, (SAVED_BASE + DYFN_SAVED_FLOAT_REGS + 8)(%rsp)
     movsd %xmm2, (SAVED_BASE + DYFN_SAVED_FLOAT_REGS + 16)(%rsp)

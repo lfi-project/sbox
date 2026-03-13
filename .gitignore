@@ -4,3 +4,7 @@ subprojects/packagecache
 subprojects/lfi-runtime
 subprojects/lfi-verifier
 subprojects/lfi-verifier.wrap
+subprojects/fadec
+subprojects/fadec.wrap
+subprojects/disarm
+subprojects/disarm.wrap

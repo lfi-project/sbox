@@ -30,6 +30,7 @@ elif backend == 'lfi'
   lib_bench_lfi = custom_target('lib_bench.lfi',
     input: 'lib_bench.c',
     output: 'lib_bench.lfi',
+    build_by_default: true,
     command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
   )
   bench_main = executable('bench_main',

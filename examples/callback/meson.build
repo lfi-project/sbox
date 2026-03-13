@@ -21,12 +21,28 @@ if backend == 'process'
     include_directories: [sbox_inc, pbox_inc],
     link_with: libpbox,
     cpp_args: ['-DSBOX_PROCESS'],
-
     install: false,
   )
   test('callback', callback_main,
     workdir: meson.current_build_dir(),
     depends: [callback_sandbox],
+  )
+elif backend == 'lfi'
+  lib_callback_lfi = custom_target('lib_callback.lfi',
+    input: 'lib_callback.c',
+    output: 'lib_callback.lfi',
+    command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
+  )
+  callback_main = executable('callback_main',
+    'main.cc',
+    include_directories: [sbox_inc, lfi_inc],
+    cpp_args: ['-DSBOX_LFI'],
+    dependencies: [lfi_linux.as_link_whole()],
+    install: false,
+  )
+  test('callback', callback_main,
+    workdir: meson.current_build_dir(),
+    depends: [lib_callback_lfi],
   )
 else
   callback_main = executable('callback_main',

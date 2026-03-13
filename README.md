@@ -1,8 +1,8 @@
 # SBox
 
 SBox is a C++ library for easily making calls to sandboxed libraries. By
-default, it supports passthrough (no sandboxing) and process-based sandboxes,
-and with upcoming support for LFI sandboxes.
+default, it supports passthrough (no sandboxing), process-based sandboxes,
+and LFI sandboxes.
 
 The goal is that when you migrate a library in your application to be called
 through SBox, the API for running the library with any of these backends is the

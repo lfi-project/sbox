@@ -234,14 +234,6 @@ public:
             box_, ptr.unsafe_unverified(), sizeof(T) * count)));
     }
 
-    // Identity-mapped allocation (host-dereferenceable).
-    // Uses arena allocator — cannot be individually freed.
-    template<typename T>
-    sbox_safe<T*> alloc_idmem(size_t count = 1) {
-        return sbox_safe<T*>(
-            static_cast<T*>(pbox_idmem_alloc(box_, sizeof(T) * count)));
-    }
-
     void free(void* ptr) {
         pbox_free(box_, ptr);
     }

@@ -21,12 +21,28 @@ if backend == 'process'
     include_directories: [sbox_inc, pbox_inc],
     link_with: libpbox,
     cpp_args: ['-DSBOX_PROCESS'],
-
     install: false,
   )
   test('shm', shm_main,
     workdir: meson.current_build_dir(),
     depends: [shm_sandbox],
+  )
+elif backend == 'lfi'
+  lib_shm_lfi = custom_target('lib_shm.lfi',
+    input: 'lib_shm.c',
+    output: 'lib_shm.lfi',
+    command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
+  )
+  shm_main = executable('shm_main',
+    'main.cc',
+    include_directories: [sbox_inc, lfi_inc],
+    cpp_args: ['-DSBOX_LFI'],
+    dependencies: [lfi_linux.as_link_whole()],
+    install: false,
+  )
+  test('shm', shm_main,
+    workdir: meson.current_build_dir(),
+    depends: [lib_shm_lfi],
   )
 else
   shm_main = executable('shm_main',

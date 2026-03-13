@@ -1,6 +1,6 @@
 backend = get_option('sbox_backend')
 
-if backend != 'process'
+if backend == 'passthrough'
   static_main = executable('static_main',
     'main.cc',
     'lib_static.c',

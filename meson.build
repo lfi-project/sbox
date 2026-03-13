@@ -152,6 +152,36 @@ test('threads', test_threads,
   depends: [testlib],
 )
 
+# LFI backend
+lfi_subproj = subproject('lfi-runtime', default_options: ['enable_linux=true'])
+lfi_linux = lfi_subproj.get_variable('lfi_linux')
+lfi_inc = include_directories('subprojects/lfi-runtime/linux/include',
+                               'subprojects/lfi-runtime/core/include')
+
+lficc_name = host_machine.cpu_family() == 'aarch64' ? 'aarch64_lfi-linux-musl-clang' : 'x86_64_lfi-linux-musl-clang'
+lficc = find_program(lficc_name, required: false)
+if lficc.found()
+  testlib_lfi = custom_target('testlib.lfi',
+    input: 'test/testlib.c',
+    output: 'testlib.lfi',
+    command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
+  )
+
+  foreach cat : test_categories
+    exe = executable('test_lfi_' + cat,
+      'test/test_lfi_' + cat + '.cc',
+      include_directories: [sbox_inc, lfi_inc, test_inc],
+      dependencies: [lfi_linux.as_link_whole()],
+      install: false,
+    )
+    test('lfi_' + cat, exe,
+      workdir: meson.current_build_dir(),
+      depends: [testlib_lfi],
+      protocol: 'tap',
+    )
+  endforeach
+endif
+
 # Compile-failure tests (verify that type errors are caught at compile time)
 compile_fail_script = find_program('test/test_compile_fail.sh')
 cxx_cmd = meson.get_compiler('cpp').cmd_array()

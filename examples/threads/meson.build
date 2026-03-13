@@ -29,6 +29,23 @@ if backend == 'process'
     workdir: meson.current_build_dir(),
     depends: [threads_sandbox],
   )
+elif backend == 'lfi'
+  lib_threads_lfi = custom_target('lib_threads.lfi',
+    input: 'lib_threads.c',
+    output: 'lib_threads.lfi',
+    command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
+  )
+  threads_main = executable('threads_main',
+    'main.cc',
+    include_directories: [sbox_inc, lfi_inc],
+    cpp_args: ['-DSBOX_LFI'],
+    dependencies: [lfi_linux.as_link_whole(), threads_dep],
+    install: false,
+  )
+  test('threads', threads_main,
+    workdir: meson.current_build_dir(),
+    depends: [lib_threads_lfi],
+  )
 else
   threads_main = executable('threads_main',
     'main.cc',

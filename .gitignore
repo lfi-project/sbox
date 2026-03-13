@@ -1,4 +1,6 @@
 .cache
 reference
-subprojects/libffi-3.5.2
 subprojects/packagecache
+subprojects/lfi-runtime
+subprojects/lfi-verifier
+subprojects/lfi-verifier.wrap

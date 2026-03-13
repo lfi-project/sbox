@@ -1,2 +1,2 @@
-option('sbox_backend', type: 'combo', choices: ['passthrough', 'process'], value: 'passthrough',
+option('sbox_backend', type: 'combo', choices: ['passthrough', 'process', 'lfi'], value: 'passthrough',
        description: 'Sandbox backend to use')

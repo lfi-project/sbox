@@ -247,13 +247,6 @@ public:
             static_cast<T*>(std::realloc(ptr.data(), sizeof(T) * count)));
     }
 
-    // Identity-mapped allocation (host-dereferenceable).
-    // For passthrough, all memory is in the same address space.
-    template<typename T>
-    sbox_safe<T*> alloc_idmem(size_t count = 1) {
-        return sbox_safe<T*>(static_cast<T*>(std::malloc(sizeof(T) * count)));
-    }
-
     void free(void* ptr) {
         std::free(ptr);
     }

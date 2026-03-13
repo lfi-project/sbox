@@ -113,4 +113,4 @@ void dyfn_closure_free_all(void) {
     dyfn_closure_count = 0;
 }
 
-#endif // SBOX_NO_CALLBACKS
+#endif  // SBOX_NO_CALLBACKS

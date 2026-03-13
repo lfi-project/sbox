@@ -1,12 +1,8 @@
 #include "dyfn_offsets.h"
 
-// Mark stack as non-executable
-.section .note.GNU-stack,"",@progbits
-
 .text
 
 // dyfn_call(DyfnCallArgs* args, DyfnCallResult* result)
-// %rdi = args, %rsi = result
 .global dyfn_call
 dyfn_call:
     push %rbp
@@ -17,7 +13,6 @@ dyfn_call:
     mov  %rdi, %rbx
     mov  %rsi, %r12
 
-    // Load all float regs unconditionally (harmless if unused)
     movsd  (DYFN_CALL_FLOAT_REGS + 0)(%rbx), %xmm0
     movsd  (DYFN_CALL_FLOAT_REGS + 8)(%rbx), %xmm1
     movsd  (DYFN_CALL_FLOAT_REGS + 16)(%rbx), %xmm2
@@ -27,12 +22,11 @@ dyfn_call:
     movsd  (DYFN_CALL_FLOAT_REGS + 48)(%rbx), %xmm6
     movsd  (DYFN_CALL_FLOAT_REGS + 56)(%rbx), %xmm7
 
-    // Push stack overflow args in reverse order
     movl DYFN_CALL_STACK_COUNT(%rbx), %eax
     test %eax, %eax
     jz   .Lno_stack
 
-    // Pad if odd stack_count to maintain 16-byte alignment
+    // Pad if odd stack_count to maintain 16-byte alignment.
     test $1, %eax
     jz   .Lparity_ok
     sub  $8, %rsp
@@ -46,7 +40,6 @@ dyfn_call:
     jne  .Lpush
 .Lno_stack:
 
-    // Load integer regs
     mov  (DYFN_CALL_INT_REGS + 0)(%rbx), %rdi
     mov  (DYFN_CALL_INT_REGS + 8)(%rbx), %rsi
     mov  (DYFN_CALL_INT_REGS + 16)(%rbx), %rdx
@@ -56,11 +49,9 @@ dyfn_call:
 
     call *DYFN_CALL_FUNC(%rbx)
 
-    // Store results
     mov   %rax, DYFN_RESULT_INT_VAL(%r12)
     movsd %xmm0, DYFN_RESULT_FLOAT_VAL(%r12)
 
-    // Tear down frame
     lea  -16(%rbp), %rsp
     pop  %r12
     pop  %rbx
@@ -68,8 +59,6 @@ dyfn_call:
     ret
 
 #ifndef SBOX_NO_CALLBACKS
-
-// --- Closure stubs ---
 
 .altmacro
 
@@ -105,7 +94,6 @@ dyfn_closure_common:
     // +8 for alignment: return address makes %rsp 8-misaligned on entry
     sub  $(DYFN_CLOSURE_FRAME_SIZE + 8), %rsp
 
-    // Save integer arg registers
     mov  %rdi, (SAVED_BASE + DYFN_SAVED_INT_REGS + 0)(%rsp)
     mov  %rsi, (SAVED_BASE + DYFN_SAVED_INT_REGS + 8)(%rsp)
     mov  %rdx, (SAVED_BASE + DYFN_SAVED_INT_REGS + 16)(%rsp)
@@ -113,7 +101,6 @@ dyfn_closure_common:
     mov  %r8,  (SAVED_BASE + DYFN_SAVED_INT_REGS + 32)(%rsp)
     mov  %r9,  (SAVED_BASE + DYFN_SAVED_INT_REGS + 40)(%rsp)
 
-    // Save float arg registers
     movsd %xmm0, (SAVED_BASE + DYFN_SAVED_FLOAT_REGS + 0)(%rsp)
     movsd %xmm1, (SAVED_BASE + DYFN_SAVED_FLOAT_REGS + 8)(%rsp)
     movsd %xmm2, (SAVED_BASE + DYFN_SAVED_FLOAT_REGS + 16)(%rsp)
@@ -123,22 +110,17 @@ dyfn_closure_common:
     movsd %xmm6, (SAVED_BASE + DYFN_SAVED_FLOAT_REGS + 48)(%rsp)
     movsd %xmm7, (SAVED_BASE + DYFN_SAVED_FLOAT_REGS + 56)(%rsp)
 
-    // Save stub index
     movl %r10d, (SAVED_BASE + DYFN_SAVED_STUB_INDEX)(%rsp)
 
-    // Call dyfn_closure_dispatch(&saved_regs, &result)
     lea  SAVED_BASE(%rsp), %rdi
     lea  RESULT_BASE(%rsp), %rsi
     call dyfn_closure_dispatch
 
-    // Load return values
     mov   (RESULT_BASE + DYFN_CLOSURE_INT_VAL)(%rsp), %rax
     movsd (RESULT_BASE + DYFN_CLOSURE_FLOAT_VAL)(%rsp), %xmm0
 
     add  $(DYFN_CLOSURE_FRAME_SIZE + 8), %rsp
     ret
-
-// --- Stub table ---
 
 .macro gen_table_entry i
     .if \i < DYFN_MAX_CLOSURES_ASM
@@ -154,3 +136,5 @@ dyfn_stub_table:
     gen_table_entry 0
 
 #endif // SBOX_NO_CALLBACKS
+
+.section .note.GNU-stack,"",@progbits

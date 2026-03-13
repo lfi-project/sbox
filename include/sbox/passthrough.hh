@@ -271,6 +271,7 @@ public:
     // For passthrough, no bounds to check.
     template<typename T>
     sbox_safe<T*> verify(sbox<T*> ptr, size_t count) {
+        (void) count;
         return sbox_safe<T*>(ptr.unsafe_unverified());
     }
 

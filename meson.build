@@ -87,6 +87,7 @@ foreach cat : test_categories
   test('passthrough_' + cat, exe,
     workdir: meson.current_build_dir(),
     depends: [testlib],
+    protocol: 'tap',
   )
 endforeach
 
@@ -100,6 +101,7 @@ foreach cat : test_categories
   test('process_' + cat, exe,
     workdir: meson.current_build_dir(),
     depends: [test_sandbox],
+    protocol: 'tap',
   )
 endforeach
 
@@ -116,6 +118,7 @@ foreach t : passthrough_extra_tests
   test('passthrough_' + t, exe,
     workdir: meson.current_build_dir(),
     depends: [testlib],
+    protocol: 'tap',
   )
 endforeach
 
@@ -132,6 +135,7 @@ foreach t : process_extra_tests
   test('process_' + t, exe,
     workdir: meson.current_build_dir(),
     depends: [test_sandbox],
+    protocol: 'tap',
   )
 endforeach
 

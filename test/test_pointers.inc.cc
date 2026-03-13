@@ -3,7 +3,6 @@
 // Uses copy_to/copy_from for backend portability.
 
 {
-    printf("== Pointer write + read-back ==\n");
 
     TEST("write_int + read_int");
     auto ip = sandbox.template alloc<int>(1);

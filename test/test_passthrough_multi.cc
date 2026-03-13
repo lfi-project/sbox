@@ -4,7 +4,6 @@
 int main() {
     sbox::Sandbox<sbox::Passthrough> sandbox("./libtestlib.so");
 
-    printf("== Multiple sandbox instances ==\n");
 
     TEST("two sandboxes independently");
     {

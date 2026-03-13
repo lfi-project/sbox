@@ -2,7 +2,6 @@
 // params). Assumes: sandbox, TEST/PASS macros, test counters in scope.
 
 {
-    printf("== Basic integer arithmetic ==\n");
 
     TEST("add(10, 32) == 42");
     assert(sandbox.call<int(int, int)>("add", 10, 32) == 42);
@@ -32,7 +31,6 @@
     assert(sandbox.call<int(int)>("negate", 0) == 0);
     PASS();
 
-    printf("== Double type ==\n");
 
     TEST("add_double(1.5, 2.5) == 4.0");
     double dr = sandbox.call<double(double, double)>("add_double", 1.5, 2.5);
@@ -49,7 +47,6 @@
     assert(fabs(dr - 2e15) < 1e6);
     PASS();
 
-    printf("== Float type ==\n");
 
     TEST("multiply_float(3.0f, 4.0f) == 12.0f");
     float fr = sandbox.call<float(float, float)>("multiply_float", 3.0f, 4.0f);
@@ -61,7 +58,6 @@
     assert(fabsf(fr - 0.25f) < 1e-5f);
     PASS();
 
-    printf("== Long long type ==\n");
 
     TEST("add_long_long with large values");
     long long llr = sandbox.call<long long(long long, long long)>(
@@ -75,7 +71,6 @@
     assert(llr == 0);
     PASS();
 
-    printf("== Unsigned int type ==\n");
 
     TEST("add_unsigned(100, 200) == 300");
     unsigned int ur = sandbox.call<unsigned int(unsigned int, unsigned int)>(
@@ -89,7 +84,6 @@
     assert(ur == 0u);  // wraps around
     PASS();
 
-    printf("== Many parameters ==\n");
 
     TEST("sum6(1,2,3,4,5,6) == 21");
     int s6 = sandbox.call<int(int, int, int, int, int, int)>("sum6", 1, 2, 3, 4,
@@ -103,7 +97,6 @@
     assert(fabs(dr - 1.7) < 1e-9);
     PASS();
 
-    printf("== Max parameters (10 = PBOX_MAX_ARGS) ==\n");
 
     TEST("sum8(1..8) == 36");
     int s8 = sandbox.call<int(int, int, int, int, int, int, int, int)>(

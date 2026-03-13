@@ -2,7 +2,6 @@
 // Assumes: sandbox, TEST/PASS macros, test counters in scope.
 
 {
-    printf("== Function handles ==\n");
 
     TEST("fn handle: add(100, 200) == 300");
     auto add_fn = sandbox.fn<int(int, int)>("add");

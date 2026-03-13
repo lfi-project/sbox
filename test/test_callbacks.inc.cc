@@ -3,7 +3,6 @@
 // scope.
 
 {
-    printf("== Callbacks ==\n");
 
     TEST("basic callback (void(int))");
     callback_value = 0;

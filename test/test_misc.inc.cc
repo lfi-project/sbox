@@ -3,7 +3,6 @@
 // Requires: <sys/wait.h>, <unistd.h>
 
 {
-    printf("== Void functions ==\n");
 
     TEST("noop() + was_noop_called()");
     sandbox.call<void()>("noop");
@@ -16,7 +15,6 @@
     assert(called == 0);
     PASS();
 
-    printf("== Error handling ==\n");
 
     TEST("invalid symbol aborts");
     pid_t pid = fork();

@@ -3,7 +3,6 @@
 // Uses copy_to/copy_from/copy_string for backend portability.
 
 {
-    printf("== Strings ==\n");
 
     TEST("process_string echo");
     auto buf = sandbox.copy_string("Hello, sandbox!");

@@ -3,7 +3,6 @@
 // Uses copy_to/copy_from for backend portability.
 
 {
-    printf("== Array / memory operations ==\n");
 
     TEST("fill_ints + sum_ints");
     auto arr = sandbox.template alloc<int>(10);
@@ -26,7 +25,6 @@
     sandbox.free(arr);
     PASS();
 
-    printf("== calloc / realloc ==\n");
 
     TEST("calloc zeroes memory");
     auto zarr = sandbox.template calloc<int>(4);
@@ -50,7 +48,6 @@
     sandbox.free(arr);
     PASS();
 
-    printf("== Alloc/free stress ==\n");
 
     TEST("repeated alloc/free (100 cycles)");
     for (int i = 0; i < 100; i++) {

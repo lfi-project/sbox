@@ -4,7 +4,6 @@
 int main() {
     sbox::Sandbox<sbox::Process> sandbox("./test_sandbox");
 
-    printf("== Process-specific ==\n");
 
     TEST("pid() returns valid pid");
     assert(sandbox.pid() > 0);

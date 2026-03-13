@@ -4,7 +4,6 @@
 int main() {
     sbox::Sandbox<sbox::Process> sandbox("./test_sandbox");
 
-    printf("== Multiple sandbox instances ==\n");
 
     TEST("two process sandboxes independently");
     {

@@ -3,7 +3,6 @@
 // in scope. Uses copy_to/copy_from/copy_string for backend portability.
 
 {
-    printf("== Structs by pointer ==\n");
 
     TEST("point_init + point_sum");
     auto p = sandbox.template alloc<Point>(1);
@@ -35,7 +34,6 @@
     sandbox.free(c);
     PASS();
 
-    printf("== Struct with pointer fields ==\n");
 
     TEST("named_array_init + named_array_sum");
     // Allocate the struct, its name string, and its values array in sandbox

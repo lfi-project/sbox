@@ -17,7 +17,6 @@ int main() {
     sbox::Sandbox<sbox::Passthrough> sandbox("./libtestlib.so");
     g_sandbox = &sandbox;
 
-    printf("== Callback re-entrancy ==\n");
 
     TEST("callback calls back into sandbox");
     // Register a callback that itself calls sandbox.call("add", value, 100)
@@ -43,7 +42,6 @@ int main() {
     assert(result == 60);
     PASS();
 
-    printf("== Callback stress ==\n");
 
     TEST("register callback 64 times");
     for (int i = 0; i < 64; i++) {

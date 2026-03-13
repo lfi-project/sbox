@@ -353,15 +353,14 @@ public:
     }
 
 private:
-    template<typename Sig, typename... Args>
-    auto call_ptr_sig(void* fn, Args... args) {
-        return call_with_sig<Sig>(fn, args...);
+    template<typename Ret, typename... Params, typename... Args>
+    Ret call_ptr_sig(void* fn, Ret (*)(Params...), Args... args) {
+        return call_impl<Ret, Params...>(fn, convert_arg<Params>(args)...);
     }
 
-    // Extract return type and parameter types from signature
-    template<typename Ret, typename... Params, typename... Args>
-    Ret call_with_sig_impl(void* fn, Ret (*)(Params...), Args... args) {
-        return call_impl<Ret, Params...>(fn, convert_arg<Params>(args)...);
+    template<typename Sig, typename... Args>
+    auto call_ptr_sig(void* fn, Args... args) {
+        return call_ptr_sig(fn, static_cast<Sig*>(nullptr), args...);
     }
 
     // Convert argument, unwrapping sbox types
@@ -376,11 +375,6 @@ private:
         } else {
             return static_cast<To>(arg);
         }
-    }
-
-    template<typename Sig, typename... Args>
-    auto call_with_sig(void* fn, Args... args) {
-        return call_with_sig_impl(fn, static_cast<Sig*>(nullptr), args...);
     }
 
     // Actual pbox_call implementation

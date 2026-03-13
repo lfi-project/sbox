@@ -17,52 +17,33 @@ namespace detail {
 class PassthroughArena {
     static constexpr size_t DEFAULT_SIZE = 64 * 1024;  // 64KB default
 
-    void* base_ = nullptr;
-    size_t size_ = 0;
+    char* base_ = nullptr;
     size_t offset_ = 0;
 
 public:
-    PassthroughArena() = default;
+    PassthroughArena() : base_(static_cast<char*>(std::malloc(DEFAULT_SIZE))) {}
 
     ~PassthroughArena() {
-        if (base_) {
-            ::munmap(base_, size_);
-        }
+        std::free(base_);
     }
 
     PassthroughArena(const PassthroughArena&) = delete;
     PassthroughArena& operator=(const PassthroughArena&) = delete;
 
     void* alloc(size_t size, size_t align = 8) {
-        ensure_initialized();
-
-        // Align offset
         offset_ = (offset_ + align - 1) & ~(align - 1);
 
-        if (offset_ + size > size_) {
-            return nullptr;  // Arena exhausted
+        if (!base_ || offset_ + size > DEFAULT_SIZE) {
+            return nullptr;
         }
 
-        void* ptr = static_cast<char*>(base_) + offset_;
+        void* ptr = base_ + offset_;
         offset_ += size;
         return ptr;
     }
 
     void reset() {
         offset_ = 0;
-    }
-
-private:
-    void ensure_initialized() {
-        if (!base_) {
-            size_ = DEFAULT_SIZE;
-            base_ = ::mmap(nullptr, size_, PROT_READ | PROT_WRITE,
-                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            if (base_ == MAP_FAILED) {
-                base_ = nullptr;
-                size_ = 0;
-            }
-        }
     }
 };
 
@@ -406,18 +387,16 @@ private:
         }
     }
 
-    // Helper to extract return type from signature and call with argument
-    // conversion
     template<typename Ret, typename... Params, typename... Args>
-    Ret call_with_sig_impl(void* fn, Ret (*)(Params...), Args... args) {
+    Ret call_ptr_sig(void* fn, Ret (*)(Params...), Args... args) {
         detail::tls_current_sandbox = this;
-        using FnPtr = Ret (*)(Params...);
-        return reinterpret_cast<FnPtr>(fn)(convert_arg<Params>(args)...);
+        return reinterpret_cast<Ret (*)(Params...)>(fn)(
+            convert_arg<Params>(args)...);
     }
 
     template<typename Sig, typename... Args>
     auto call_ptr_sig(void* fn, Args... args) {
-        return call_with_sig_impl(fn, static_cast<Sig*>(nullptr), args...);
+        return call_ptr_sig(fn, static_cast<Sig*>(nullptr), args...);
     }
 
     void* lookup(const char* name) {

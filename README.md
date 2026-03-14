@@ -55,6 +55,46 @@ sbox::Sandbox<sbox::Passthrough> sandbox("./libadd.so");
 
 ## Features
 
+### Sandbox Pointer Types
+
+SBox uses two pointer wrapper types for taint tracking of sandbox pointers.
+
+* `sbox<T*>`: an unchecked sandbox pointer. Returned by sandbox function calls,
+  and can be passed to sandbox functions that take pointers. Cannot be
+  dereferenced by the host.
+* `sbox_safe<T*>` -- a bounds-checked sandbox pointer. Returned by `alloc()`
+  (on the LFI backend) and by calling `verify()` on a `sbox<T*>`. Freely
+  dereferenceable, and can also be implicitly promoted back to `sbox<T*>`.
+
+Raw pointers are rejected at compile time when passed to sandbox calls.
+
+```cpp
+sbox::Sandbox<sbox::LFI> sandbox("./libfoo.lfi");
+
+sbox_safe<int*> buf = sandbox.alloc<int>(10);    // verified, safe to use
+buf[0] = 42;
+
+sbox<int*> ptr = sandbox.call<int*(int*)>("get_ptr", buf);  // unchecked
+sbox_safe<int*> safe = sandbox.verify(ptr, 10);             // now verified
+safe[0] = 42;
+```
+
+### Type-Safe Function Calls
+
+Instead of specifying the function signature manually at the call site, you can
+include the library's header and use `SBOX_FN` to automatically deduce it. The
+argument types are then checked against the header declaration at compile time.
+
+```cpp
+#include "lib_add.h"  // declares: int add(int a, int b);
+
+int result = sandbox.call(SBOX_FN(add), 2, 3);
+
+// Also works with function handles:
+sbox::FnHandle add_fn = sandbox.fn(SBOX_FN(add));
+int r = add_fn(100, 200);
+```
+
 ### In/Out Parameters
 
 When a sandbox function takes pointer parameters, use a `CallContext` with

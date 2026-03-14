@@ -411,11 +411,13 @@ public:
     template<typename T>
     T* idmem_alloc(size_t count = 1) {
         void* p = lfi_lib_malloc(box_, get_thread_ctx(), sizeof(T) * count);
+        std::lock_guard<std::mutex> lock(idmem_mutex_);
         idmem_allocations_.push_back(p);
         return static_cast<T*>(p);
     }
 
     void idmem_reset() {
+        std::lock_guard<std::mutex> lock(idmem_mutex_);
         for (void* p : idmem_allocations_) {
             lfi_lib_free(box_, get_thread_ctx(), p);
         }
@@ -546,6 +548,7 @@ public:
 
 private:
     std::vector<void*> idmem_allocations_;
+    std::mutex idmem_mutex_;
     template<typename To, typename From>
     static To convert_arg(From arg) {
         if constexpr (detail::is_sbox_ptr_v<From>) {

@@ -196,6 +196,13 @@ lfi_linux = lfi_subproj.get_variable('lfi_linux')
 lfi_inc = include_directories('subprojects/lfi-runtime/linux/include',
                                'subprojects/lfi-runtime/core/include')
 
+libsbox_lfi = static_library('sbox_lfi',
+  'src/sbox_lfi.cc',
+  include_directories: [sbox_inc, lfi_inc],
+  dependencies: [lfi_linux.as_link_whole()],
+  install: false,
+)
+
 lficc_name = host_machine.cpu_family() == 'aarch64' ? 'aarch64_lfi-linux-musl-clang' : 'x86_64_lfi-linux-musl-clang'
 lficc = find_program(lficc_name, required: false)
 if lficc.found()
@@ -209,7 +216,7 @@ if lficc.found()
     exe = executable('test_lfi_' + cat,
       'test/test_lfi_' + cat + '.cc',
       include_directories: [sbox_inc, lfi_inc, test_inc],
-      dependencies: [lfi_linux.as_link_whole()],
+      link_with: libsbox_lfi,
       install: false,
     )
     test('lfi_' + cat, exe,
@@ -228,7 +235,7 @@ if lficc.found()
   test_lfi_multi_sandbox = executable('test_lfi_multi_sandbox',
     'test/test_lfi_multi_sandbox.cc',
     include_directories: [sbox_inc, lfi_inc, test_inc],
-    dependencies: [lfi_linux.as_link_whole()],
+    link_with: libsbox_lfi,
     install: false,
   )
   test('lfi_multi_sandbox', test_lfi_multi_sandbox,

@@ -170,87 +170,15 @@ class LFIManager {
     static inline struct LFILinuxEngine* linux_engine_ = nullptr;
 
 public:
-    // Pre-initialize the engine with room for 'n' sandboxes.
-    // Must be called before any Sandbox<LFI> is created.
-    // Returns false on failure.
-    static bool init(size_t n) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (engine_) {
-            return false;
-        }
-        return create(n);
-    }
-
-    // Tear down the engine. All sandboxes must be destroyed first.
-    static void destroy() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (linux_engine_) {
-            lfi_linux_free(linux_engine_);
-            linux_engine_ = nullptr;
-        }
-        if (engine_) {
-            lfi_free(engine_);
-            engine_ = nullptr;
-        }
-    }
+    static bool init(size_t n);
+    static void destroy();
 
 private:
     friend class Sandbox<LFI>;
 
-    static bool ensure() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (!engine_) {
-            return create(1);
-        }
-        return true;
-    }
-
-    static bool create(size_t n) {
-        const char* dir_maps[] = {nullptr};
-
-        engine_ = lfi_new(
-            {
-                .pagesize = static_cast<size_t>(getpagesize()),
-                .boxsize = 4ULL * 1024 * 1024 * 1024,
-                .verbose = false,
-                .stores_only = false,
-                .no_verify = false,
-                .allow_wx = false,
-                .no_init_sigaltstack = false,
-                .no_rtcall_nullpage = false,
-            },
-            n);
-        if (!engine_) {
-            return false;
-        }
-
-        linux_engine_ = lfi_linux_new(engine_,
-                                       {
-                                           .stacksize = 2 * 1024 * 1024,
-                                           .verbose = false,
-                                           .perf = false,
-                                           .dir_maps = dir_maps,
-                                           .wd = nullptr,
-                                           .exit_unknown_syscalls = false,
-                                           .sys_passthrough = false,
-                                           .debug = false,
-                                           .brk_control = false,
-                                           .brk_size = 0,
-                                       });
-        if (!linux_engine_) {
-            lfi_free(engine_);
-            engine_ = nullptr;
-            return false;
-        }
-        return true;
-    }
-
-    static struct LFILinuxEngine* get() {
-        if (!ensure()) {
-            return nullptr;
-        }
-        return linux_engine_;
-    }
+    static bool ensure();
+    static bool create(size_t n);
+    static struct LFILinuxEngine* get();
 };
 
 // LFI backend - sandboxes library using LFI memory isolation
@@ -269,53 +197,9 @@ class Sandbox<LFI> {
 
 public:
     // Create a sandbox from an LFI binary. Returns nullptr on failure.
-    static std::unique_ptr<Sandbox<LFI>> create(const char* library_path) {
-        LFILinuxEngine* linux_engine = LFIManager::get();
-        if (!linux_engine) {
-            return nullptr;
-        }
+    static std::unique_ptr<Sandbox<LFI>> create(const char* library_path);
 
-        std::unique_ptr<Sandbox<LFI>> sb(new Sandbox<LFI>());
-
-        sb->proc_ = lfi_proc_new(linux_engine);
-        if (!sb->proc_) {
-            return nullptr;
-        }
-
-        if (!lfi_proc_load_file(sb->proc_, library_path)) {
-            return nullptr;
-        }
-
-        sb->box_ = lfi_proc_box(sb->proc_);
-        lfiptr lfi_ret = lfi_proc_sym(sb->proc_, "_lfi_ret");
-        if (!lfi_ret) {
-            return nullptr;
-        }
-        lfi_box_register_ret(sb->box_, lfi_ret);
-
-        const char* envp[] = {nullptr};
-        const char* argv[] = {library_path, nullptr};
-        sb->main_thread_ = lfi_thread_new(sb->proc_, 0, argv, envp);
-        if (!sb->main_thread_) {
-            return nullptr;
-        }
-        int run_result = lfi_thread_run(sb->main_thread_);
-        if (run_result != 0) {
-            return nullptr;
-        }
-
-        lfi_linux_init_clone(sb->main_thread_);
-        sb->main_thread_tid_ = std::this_thread::get_id();
-
-        return sb;
-    }
-
-    ~Sandbox() {
-        if (main_thread_)
-            lfi_thread_free(main_thread_);
-        if (proc_)
-            lfi_proc_free(proc_);
-    }
+    ~Sandbox();
 
     Sandbox(const Sandbox&) = delete;
     Sandbox& operator=(const Sandbox&) = delete;
@@ -409,7 +293,6 @@ public:
     }
 
     // -- Memory allocation --
-    // Sandbox memory is in the host address space, so returns sbox_safe.
 
     template<typename T>
     sbox_safe<T*> alloc(size_t count = 1) {
@@ -443,9 +326,6 @@ public:
         free(sbox<T*>(p));
     }
 
-    // Identity-mapped allocation. For LFI, sandbox memory is already
-    // host-accessible, so this uses the sandbox allocator. Tracked for
-    // idmem_reset.
     template<typename T>
     T* idmem_alloc(size_t count = 1) {
         void* p = lfi_lib_malloc(box_, get_thread_ctx(), sizeof(T) * count);
@@ -454,13 +334,7 @@ public:
         return static_cast<T*>(p);
     }
 
-    void idmem_reset() {
-        std::lock_guard<std::mutex> lock(idmem_mutex_);
-        for (void* p : idmem_allocations_) {
-            lfi_lib_free(box_, get_thread_ctx(), p);
-        }
-        idmem_allocations_.clear();
-    }
+    void idmem_reset();
 
     // -- Pointer verification --
 
@@ -507,43 +381,13 @@ public:
         copy_from(d, sbox<T*>(s), n);
     }
 
-    sbox_safe<char*> copy_string(const char* s) {
-        size_t len = std::strlen(s) + 1;
-        auto buf = alloc<char>(len);
-        if (!buf)
-            return {};
-        copy_to(buf, s, len);
-        return buf;
-    }
+    sbox_safe<char*> copy_string(const char* s);
 
     // -- Memory mapping --
 
     void* mmap(void* addr, size_t length, int prot, int flags, int fd,
-               off_t offset) {
-        int lfi_prot = 0;
-        if (prot & PROT_READ) lfi_prot |= LFI_PROT_READ;
-        if (prot & PROT_WRITE) lfi_prot |= LFI_PROT_WRITE;
-        if (prot & PROT_EXEC) lfi_prot |= LFI_PROT_EXEC;
-
-        int lfi_flags = 0;
-        if (flags & MAP_SHARED) lfi_flags |= LFI_MAP_SHARED;
-        if (flags & MAP_PRIVATE) lfi_flags |= LFI_MAP_PRIVATE;
-        if (flags & MAP_FIXED) lfi_flags |= LFI_MAP_FIXED;
-        if (flags & MAP_ANONYMOUS) lfi_flags |= LFI_MAP_ANONYMOUS;
-
-        lfiptr result;
-        if (flags & MAP_FIXED) {
-            result = lfi_box_mapat(box_, reinterpret_cast<lfiptr>(addr),
-                                   length, lfi_prot, lfi_flags, fd, offset);
-        } else {
-            result = lfi_box_mapany(box_, length, lfi_prot, lfi_flags, fd, offset);
-        }
-        return reinterpret_cast<void*>(result);
-    }
-
-    int munmap(void* addr, size_t length) {
-        return lfi_box_munmap(box_, reinterpret_cast<lfiptr>(addr), length);
-    }
+               off_t offset);
+    int munmap(void* addr, size_t length);
 
     // -- Callbacks --
 
@@ -566,24 +410,9 @@ public:
 
     // -- Stack allocation (used by CallContext) --
 
-    void* stack_push(size_t size, size_t align = 16) {
-        LFIContext* ctx = *get_thread_ctx();
-        LFIRegs* regs = lfi_ctx_regs(ctx);
-        uint64_t sp = detail::get_sp(regs);
-        sp = (sp - size) & ~(align - 1);
-        detail::set_sp(regs, sp);
-        return reinterpret_cast<void*>(sp);
-    }
-
-    uint64_t stack_save() {
-        LFIContext* ctx = *get_thread_ctx();
-        return detail::get_sp(lfi_ctx_regs(ctx));
-    }
-
-    void stack_restore(uint64_t sp) {
-        LFIContext* ctx = *get_thread_ctx();
-        detail::set_sp(lfi_ctx_regs(ctx), sp);
-    }
+    void* stack_push(size_t size, size_t align = 16);
+    uint64_t stack_save();
+    void stack_restore(uint64_t sp);
 
     // Context-aware calls (defined after CallContext)
     template<typename Sig, typename... Args>
@@ -593,7 +422,7 @@ public:
     auto call(CallContext<LFI>& ctx, TypedName<Ret (*)(Params...)> tn,
               Args... args);
 
-    inline CallContext<LFI> context();
+    CallContext<LFI> context();
 
     LFIBox* native_handle() const { return box_; }
     LFILinuxProc* proc() const { return proc_; }
@@ -601,6 +430,7 @@ public:
 private:
     std::vector<void*> idmem_allocations_;
     std::mutex idmem_mutex_;
+
     template<typename To, typename From>
     static To convert_arg(From arg) {
         if constexpr (detail::is_sbox_ptr_v<From>) {
@@ -625,41 +455,14 @@ private:
         return call_with_sig_impl(fn, static_cast<Sig*>(nullptr), args...);
     }
 
-    lfiptr lookup(const char* name) {
-        std::lock_guard<std::mutex> lock(symbol_cache_mutex_);
-
-        auto it = symbol_cache_.find(name);
-        if (it != symbol_cache_.end()) {
-            return it->second;
-        }
-
-        lfiptr sym = lfi_proc_sym(proc_, name);
-        if (!sym) {
-            fprintf(stderr, "sbox: symbol not found: %s\n", name);
-            abort();
-        }
-        symbol_cache_[name] = sym;
-        return sym;
-    }
+    lfiptr lookup(const char* name);
 
     struct ThreadCtxEntry {
         LFIBox* box;
         LFIContext* ctx;
     };
 
-    LFIContext** get_thread_ctx() {
-        static thread_local std::deque<ThreadCtxEntry> entries;
-
-        for (auto& e : entries) {
-            if (e.box == box_) return &e.ctx;
-        }
-        entries.push_back({box_, nullptr});
-        auto& e = entries.back();
-        if (main_thread_tid_ == std::this_thread::get_id()) {
-            e.ctx = *lfi_thread_ctxp(main_thread_);
-        }
-        return &e.ctx;
-    }
+    LFIContext** get_thread_ctx();
 };
 
 // LFI CallContext - uses sandbox stack for in/out/inout parameters
@@ -718,9 +521,7 @@ public:
     }
 };
 
-inline CallContext<LFI> Sandbox<LFI>::context() {
-    return CallContext<LFI>(*this);
-}
+// Deferred method definitions (need CallContext to be complete)
 
 template<typename Sig, typename... Args>
 auto Sandbox<LFI>::call(CallContext<LFI>& ctx, const char* name,

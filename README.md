@@ -77,6 +77,37 @@ auto sb1 = sbox::Sandbox<sbox::LFI>::create("./libfoo.lfi");
 auto sb2 = sbox::Sandbox<sbox::LFI>::create("./libbar.lfi");
 ```
 
+## Setting Up the LFI Backend
+
+The LFI backend requires:
+
+1. **LFI compiler** (`x86_64_lfi-linux-musl-clang` or
+   `aarch64_lfi-linux-musl-clang`) to compile C libraries into `.lfi` binaries.
+2. **LFI runtime** ([lfi-runtime](https://github.com/lfi-project/lfi-runtime)),
+   which provides the sandboxing engine, trampoline, and sandbox memory
+   management.
+
+### Compiling your library
+
+Use the LFI cross-compiler to produce a `.lfi` binary:
+
+```sh
+x86_64_lfi-linux-musl-clang -static-pie -o libfoo.lfi foo.c \
+    -lboxrt -Wl,--export-dynamic -O2
+```
+
+The `-lboxrt` flag links the sandbox runtime, and `-Wl,--export-dynamic`
+ensures symbols are visible for lookup.
+
+### Linking your host program
+
+Your C++ host program must:
+
+* Include `sbox/lfi.hh` and the LFI runtime headers (from `lfi-runtime/core/include`
+  and `lfi-runtime/linux/include`).
+* Compile and link `src/sbox_lfi.cc` (the non-template LFI backend implementation).
+* Link the LFI runtime library (`liblfi`).
+
 ## Features
 
 ### Sandbox Pointer Types

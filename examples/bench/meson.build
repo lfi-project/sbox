@@ -37,7 +37,8 @@ elif backend == 'lfi'
     'main.cc',
     include_directories: [sbox_inc, lfi_inc],
     cpp_args: ['-DSBOX_LFI'],
-    dependencies: [lfi_linux.as_link_whole(), thread_dep],
+    link_with: libsbox_lfi,
+    dependencies: [thread_dep],
     install: false,
   )
 else

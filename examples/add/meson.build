@@ -39,7 +39,7 @@ elif backend == 'lfi'
     'main.cc',
     include_directories: [sbox_inc, lfi_inc, add_inc],
     cpp_args: ['-DSBOX_LFI'],
-    dependencies: [lfi_linux.as_link_whole()],
+    link_with: libsbox_lfi,
     install: false,
   )
   test('add', add_main,

@@ -372,6 +372,10 @@ public:
         auto ctxp = get_thread_ctx();
         if (*ctxp == nullptr) {
             lfi_clone(box_, ctxp);
+            if (*ctxp == nullptr) {
+                fprintf(stderr, "sbox: lfi_clone failed for worker thread\n");
+                abort();
+            }
         }
 
         lfi_invoke_info = {
@@ -521,7 +525,6 @@ public:
 
     void* mmap(void* addr, size_t length, int prot, int flags, int fd,
                off_t offset) {
-        (void)addr;
         int lfi_prot = 0;
         if (prot & PROT_READ) lfi_prot |= LFI_PROT_READ;
         if (prot & PROT_WRITE) lfi_prot |= LFI_PROT_WRITE;
@@ -533,8 +536,14 @@ public:
         if (flags & MAP_FIXED) lfi_flags |= LFI_MAP_FIXED;
         if (flags & MAP_ANONYMOUS) lfi_flags |= LFI_MAP_ANONYMOUS;
 
-        return reinterpret_cast<void*>(
-            lfi_box_mapany(box_, length, lfi_prot, lfi_flags, fd, offset));
+        lfiptr result;
+        if (flags & MAP_FIXED) {
+            result = lfi_box_mapat(box_, reinterpret_cast<lfiptr>(addr),
+                                   length, lfi_prot, lfi_flags, fd, offset);
+        } else {
+            result = lfi_box_mapany(box_, length, lfi_prot, lfi_flags, fd, offset);
+        }
+        return reinterpret_cast<void*>(result);
     }
 
     int munmap(void* addr, size_t length) {
@@ -562,18 +571,23 @@ public:
 
     // -- Stack allocation (used by CallContext) --
 
-    void* stack_push(size_t size) {
+    void* stack_push(size_t size, size_t align = 16) {
         LFIContext* ctx = *get_thread_ctx();
         LFIRegs* regs = lfi_ctx_regs(ctx);
         uint64_t sp = detail::get_sp(regs);
-        detail::set_sp(regs, sp - size);
-        return reinterpret_cast<void*>(sp - size);
+        sp = (sp - size) & ~(align - 1);
+        detail::set_sp(regs, sp);
+        return reinterpret_cast<void*>(sp);
     }
 
-    void stack_pop(size_t size) {
+    uint64_t stack_save() {
         LFIContext* ctx = *get_thread_ctx();
-        LFIRegs* regs = lfi_ctx_regs(ctx);
-        detail::set_sp(regs, detail::get_sp(regs) + size);
+        return detail::get_sp(lfi_ctx_regs(ctx));
+    }
+
+    void stack_restore(uint64_t sp) {
+        LFIContext* ctx = *get_thread_ctx();
+        detail::set_sp(lfi_ctx_regs(ctx), sp);
     }
 
     // Context-aware calls (defined after CallContext)
@@ -658,17 +672,16 @@ template<>
 class CallContext<LFI> {
     Sandbox<LFI>* sandbox_;
     std::vector<std::function<void()>> copybacks_;
-    size_t stack_allocated_ = 0;
+    uint64_t saved_sp_;
     bool finalized_ = false;
 
 public:
-    explicit CallContext(Sandbox<LFI>& sb) : sandbox_(&sb) {}
+    explicit CallContext(Sandbox<LFI>& sb)
+        : sandbox_(&sb), saved_sp_(sb.stack_save()) {}
 
     ~CallContext() {
         finalize();
-        if (stack_allocated_ > 0) {
-            sandbox_->stack_pop(stack_allocated_);
-        }
+        sandbox_->stack_restore(saved_sp_);
     }
 
     CallContext(const CallContext&) = delete;
@@ -685,8 +698,7 @@ public:
 
     template<typename T>
     T* out(T& host_ref) {
-        T* sbox_ptr = static_cast<T*>(sandbox_->stack_push(sizeof(T)));
-        stack_allocated_ += sizeof(T);
+        T* sbox_ptr = static_cast<T*>(sandbox_->stack_push(sizeof(T), alignof(T)));
         T* host_ptr = &host_ref;
         copybacks_.push_back(
             [host_ptr, sbox_ptr]() { *host_ptr = *sbox_ptr; });
@@ -695,16 +707,14 @@ public:
 
     template<typename T>
     const T* in(const T& host_ref) {
-        T* sbox_ptr = static_cast<T*>(sandbox_->stack_push(sizeof(T)));
-        stack_allocated_ += sizeof(T);
+        T* sbox_ptr = static_cast<T*>(sandbox_->stack_push(sizeof(T), alignof(T)));
         *sbox_ptr = host_ref;
         return sbox_ptr;
     }
 
     template<typename T>
     T* inout(T& host_ref) {
-        T* sbox_ptr = static_cast<T*>(sandbox_->stack_push(sizeof(T)));
-        stack_allocated_ += sizeof(T);
+        T* sbox_ptr = static_cast<T*>(sandbox_->stack_push(sizeof(T), alignof(T)));
         T* host_ptr = &host_ref;
         *sbox_ptr = host_ref;
         copybacks_.push_back(

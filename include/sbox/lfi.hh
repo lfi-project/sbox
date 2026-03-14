@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -506,6 +507,10 @@ public:
 
     template<typename Ret, typename... Args>
     sbox<Ret (*)(Args...)> register_callback(Ret (*fn)(Args...)) {
+        constexpr size_t n_int = ((detail::is_float_arg<Args> ? 0 : 1) + ... + 0);
+        constexpr size_t n_float = ((detail::is_float_arg<Args> ? 1 : 0) + ... + 0);
+        static_assert(n_int <= detail::max_int_reg_args && n_float <= detail::max_float_reg_args,
+                      "LFI callbacks do not support stack arguments");
         void* raw = lfi_box_register_cb(box_, reinterpret_cast<void*>(fn));
         return sbox<Ret (*)(Args...)>(
             reinterpret_cast<Ret (*)(Args...)>(raw));
@@ -590,14 +595,23 @@ private:
         return sym;
     }
 
-    LFIContext** get_thread_ctx() {
-        static thread_local LFIContext* tls_ctx = nullptr;
+    struct ThreadCtxEntry {
+        LFIBox* box;
+        LFIContext* ctx;
+    };
 
-        if (tls_ctx == nullptr &&
-            main_thread_tid_ == std::this_thread::get_id()) {
-            tls_ctx = *lfi_thread_ctxp(main_thread_);
+    LFIContext** get_thread_ctx() {
+        static thread_local std::deque<ThreadCtxEntry> entries;
+
+        for (auto& e : entries) {
+            if (e.box == box_) return &e.ctx;
         }
-        return &tls_ctx;
+        entries.push_back({box_, nullptr});
+        auto& e = entries.back();
+        if (main_thread_tid_ == std::this_thread::get_id()) {
+            e.ctx = *lfi_thread_ctxp(main_thread_);
+        }
+        return &e.ctx;
     }
 };
 

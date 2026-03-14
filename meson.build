@@ -10,9 +10,14 @@ project('sbox', 'cpp', 'c',
 # Header-only library
 sbox_inc = include_directories('include')
 
-# Test library (shared object for passthrough)
+# Test libraries (shared objects for passthrough)
 testlib = shared_library('testlib',
   'test/testlib.c',
+  install: false,
+)
+
+testlib2 = shared_library('testlib2',
+  'test/testlib2.c',
   install: false,
 )
 
@@ -63,10 +68,18 @@ libpbox_sandbox_nocb = static_library('pbox_sandbox_nocb',
   install: false,
 )
 
-# Test sandbox executable (runs in child process)
+# Test sandbox executables (run in child process)
 test_sandbox = executable('test_sandbox',
   'test/testlib.c',
   link_with: libpbox_sandbox,
+  link_args: ['-rdynamic'],
+  dependencies: [dl_dep],
+  install: false,
+)
+
+test_sandbox2 = executable('test_sandbox2',
+  'test/testlib2.c',
+  link_with: libpbox_sandbox_nocb,
   link_args: ['-rdynamic'],
   dependencies: [dl_dep],
   install: false,
@@ -139,6 +152,31 @@ foreach t : process_extra_tests
   )
 endforeach
 
+# Multi-sandbox tests
+test_passthrough_multi_sandbox = executable('test_passthrough_multi_sandbox',
+  'test/test_passthrough_multi_sandbox.cc',
+  include_directories: [sbox_inc, test_inc],
+  dependencies: [dl_dep],
+  install: false,
+)
+test('passthrough_multi_sandbox', test_passthrough_multi_sandbox,
+  workdir: meson.current_build_dir(),
+  depends: [testlib, testlib2],
+  protocol: 'tap',
+)
+
+test_process_multi_sandbox = executable('test_process_multi_sandbox',
+  'test/test_process_multi_sandbox.cc',
+  include_directories: [sbox_inc, pbox_inc, test_inc],
+  link_with: libpbox,
+  install: false,
+)
+test('process_multi_sandbox', test_process_multi_sandbox,
+  workdir: meson.current_build_dir(),
+  depends: [test_sandbox, test_sandbox2],
+  protocol: 'tap',
+)
+
 # Threading test
 thread_dep = dependency('threads')
 test_threads = executable('test_threads',
@@ -180,6 +218,24 @@ if lficc.found()
       protocol: 'tap',
     )
   endforeach
+
+  testlib2_lfi = custom_target('testlib2.lfi',
+    input: 'test/testlib2.c',
+    output: 'testlib2.lfi',
+    command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
+  )
+
+  test_lfi_multi_sandbox = executable('test_lfi_multi_sandbox',
+    'test/test_lfi_multi_sandbox.cc',
+    include_directories: [sbox_inc, lfi_inc, test_inc],
+    dependencies: [lfi_linux.as_link_whole()],
+    install: false,
+  )
+  test('lfi_multi_sandbox', test_lfi_multi_sandbox,
+    workdir: meson.current_build_dir(),
+    depends: [testlib_lfi, testlib2_lfi],
+    protocol: 'tap',
+  )
 endif
 
 # Compile-failure tests (verify that type errors are caught at compile time)

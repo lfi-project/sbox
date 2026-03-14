@@ -160,24 +160,51 @@ inline void stage_stack_args(LFIRegs* regs, const uint64_t* stack_args,
 
 }  // namespace detail
 
-// LFI backend - sandboxes library using LFI memory isolation
-template<>
-class Sandbox<LFI> {
-    LFIEngine* engine_ = nullptr;
-    LFILinuxEngine* linux_engine_ = nullptr;
-    LFILinuxProc* proc_ = nullptr;
-    LFILinuxThread* main_thread_ = nullptr;
-    LFIBox* box_ = nullptr;
-
-    std::mutex symbol_cache_mutex_;
-    std::unordered_map<std::string, lfiptr> symbol_cache_;
-
-    mutable std::thread::id main_thread_tid_;
+// Process-global LFI engine manager. Optionally call init() before creating
+// sandboxes to set the capacity. If not called, the first Sandbox<LFI>
+// creates a default engine with capacity 1.
+class LFIManager {
+    static inline std::mutex mutex_;
+    static inline struct LFIEngine* engine_ = nullptr;
+    static inline struct LFILinuxEngine* linux_engine_ = nullptr;
 
 public:
-    explicit Sandbox(const char* library_path) {
+    // Pre-initialize the engine with room for 'n' sandboxes.
+    // Must be called before any Sandbox<LFI> is created.
+    static void init(size_t n) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (engine_) {
+            fprintf(stderr, "sbox: LFIManager already initialized\n");
+            abort();
+        }
+        create(n);
+    }
+
+    // Tear down the engine. All sandboxes must be destroyed first.
+    static void destroy() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (linux_engine_) {
+            lfi_linux_free(linux_engine_);
+            linux_engine_ = nullptr;
+        }
+        if (engine_) {
+            lfi_free(engine_);
+            engine_ = nullptr;
+        }
+    }
+
+private:
+    friend class Sandbox<LFI>;
+
+    static void ensure() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!engine_) {
+            create(1);
+        }
+    }
+
+    static void create(size_t n) {
         const char* dir_maps[] = {nullptr};
-        const char* envp[] = {nullptr};
 
         engine_ = lfi_new(
             {
@@ -190,7 +217,7 @@ public:
                 .no_init_sigaltstack = false,
                 .no_rtcall_nullpage = false,
             },
-            1);
+            n);
         if (!engine_) {
             fprintf(stderr, "sbox: failed to create LFI engine: %s\n",
                     lfi_errmsg());
@@ -212,15 +239,38 @@ public:
                                        });
         if (!linux_engine_) {
             lfi_free(engine_);
+            engine_ = nullptr;
             fprintf(stderr, "sbox: failed to create LFI Linux engine: %s\n",
                     lfi_errmsg());
             abort();
         }
+    }
 
-        proc_ = lfi_proc_new(linux_engine_);
+    static struct LFILinuxEngine* get() {
+        ensure();
+        return linux_engine_;
+    }
+};
+
+// LFI backend - sandboxes library using LFI memory isolation
+template<>
+class Sandbox<LFI> {
+    LFILinuxProc* proc_ = nullptr;
+    LFILinuxThread* main_thread_ = nullptr;
+    LFIBox* box_ = nullptr;
+
+    std::mutex symbol_cache_mutex_;
+    std::unordered_map<std::string, lfiptr> symbol_cache_;
+
+    mutable std::thread::id main_thread_tid_;
+
+public:
+    explicit Sandbox(const char* library_path) {
+        const char* envp[] = {nullptr};
+        LFILinuxEngine* linux_engine = LFIManager::get();
+
+        proc_ = lfi_proc_new(linux_engine);
         if (!proc_) {
-            lfi_linux_free(linux_engine_);
-            lfi_free(engine_);
             fprintf(stderr, "sbox: failed to create LFI proc: %s\n",
                     lfi_errmsg());
             abort();
@@ -228,8 +278,6 @@ public:
 
         if (!lfi_proc_load_file(proc_, library_path)) {
             lfi_proc_free(proc_);
-            lfi_linux_free(linux_engine_);
-            lfi_free(engine_);
             fprintf(stderr, "sbox: failed to load LFI binary: %s\n",
                     lfi_errmsg());
             abort();
@@ -239,8 +287,6 @@ public:
         lfiptr lfi_ret = lfi_proc_sym(proc_, "_lfi_ret");
         if (!lfi_ret) {
             lfi_proc_free(proc_);
-            lfi_linux_free(linux_engine_);
-            lfi_free(engine_);
             fprintf(stderr,
                     "sbox: _lfi_ret not found - link with -lboxrt\n");
             abort();
@@ -251,8 +297,6 @@ public:
         main_thread_ = lfi_thread_new(proc_, 0, argv, envp);
         if (!main_thread_) {
             lfi_proc_free(proc_);
-            lfi_linux_free(linux_engine_);
-            lfi_free(engine_);
             fprintf(stderr, "sbox: failed to create LFI thread: %s\n",
                     lfi_errmsg());
             abort();
@@ -261,8 +305,6 @@ public:
         if (run_result != 0) {
             lfi_thread_free(main_thread_);
             lfi_proc_free(proc_);
-            lfi_linux_free(linux_engine_);
-            lfi_free(engine_);
             fprintf(stderr,
                     "sbox: LFI thread init failed with code %d\n",
                     run_result);
@@ -278,10 +320,6 @@ public:
             lfi_thread_free(main_thread_);
         if (proc_)
             lfi_proc_free(proc_);
-        if (linux_engine_)
-            lfi_linux_free(linux_engine_);
-        if (engine_)
-            lfi_free(engine_);
     }
 
     Sandbox(const Sandbox&) = delete;

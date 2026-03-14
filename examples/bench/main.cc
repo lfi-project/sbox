@@ -32,7 +32,9 @@ int main() {
     SboxType sandbox("./bench_sandbox");
     const char* backend_name = "process";
 #elif defined(SBOX_LFI)
-    SboxType sandbox("./lib_bench.lfi");
+    auto sbp = SboxType::create("./lib_bench.lfi");
+    if (!sbp) { fprintf(stderr, "failed to create sandbox\n"); return 1; }
+    auto& sandbox = *sbp;
     const char* backend_name = "lfi";
 #else
     SboxType sandbox("./libbench.so");

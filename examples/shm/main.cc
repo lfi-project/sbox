@@ -17,7 +17,9 @@ int main() {
 #if defined(SBOX_PROCESS)
     sbox::Sandbox<sbox::Process> sandbox("./shm_sandbox");
 #elif defined(SBOX_LFI)
-    sbox::Sandbox<sbox::LFI> sandbox("./lib_shm.lfi");
+    auto sb = sbox::Sandbox<sbox::LFI>::create("./lib_shm.lfi");
+    if (!sb) { fprintf(stderr, "failed to create sandbox\n"); return 1; }
+    auto& sandbox = *sb;
 #else
     sbox::Sandbox<sbox::Passthrough> sandbox("./libshm.so");
 #endif

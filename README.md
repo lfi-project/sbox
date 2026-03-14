@@ -53,6 +53,22 @@ the backend:
 sbox::Sandbox<sbox::Passthrough> sandbox("./libadd.so");
 ```
 
+For the LFI backend, compile the library with `lficc` to produce a `.lfi` binary.
+The LFI sandbox uses a factory function since initialization is fallible:
+
+```cpp
+#include "sbox/lfi.hh"
+auto sandbox = sbox::Sandbox<sbox::LFI>::create("./libadd.lfi");
+```
+
+For multiple LFI sandboxes, pre-initialize the engine with the desired capacity:
+
+```cpp
+sbox::LFIManager::init(4);  // room for 4 sandboxes
+auto sb1 = sbox::Sandbox<sbox::LFI>::create("./libfoo.lfi");
+auto sb2 = sbox::Sandbox<sbox::LFI>::create("./libbar.lfi");
+```
+
 ## Features
 
 ### Sandbox Pointer Types
@@ -69,13 +85,13 @@ SBox uses two pointer wrapper types for taint tracking of sandbox pointers.
 Raw pointers are rejected at compile time when passed to sandbox calls.
 
 ```cpp
-sbox::Sandbox<sbox::LFI> sandbox("./libfoo.lfi");
+auto sandbox = sbox::Sandbox<sbox::LFI>::create("./libfoo.lfi");
 
-sbox_safe<int*> buf = sandbox.alloc<int>(10);    // verified, safe to use
+sbox_safe<int*> buf = sandbox->alloc<int>(10);    // verified, safe to use
 buf[0] = 42;
 
-sbox<int*> ptr = sandbox.call<int*(int*)>("get_ptr", buf);  // unchecked
-sbox_safe<int*> safe = sandbox.verify(ptr, 10);             // now verified
+sbox<int*> ptr = sandbox->call<int*(int*)>("get_ptr", buf);  // unchecked
+sbox_safe<int*> safe = sandbox->verify(ptr, 10);             // now verified
 safe[0] = 42;
 ```
 

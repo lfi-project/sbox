@@ -54,7 +54,9 @@ int main() {
 #if defined(SBOX_PROCESS)
     SboxType sb("./threads_sandbox");
 #elif defined(SBOX_LFI)
-    SboxType sb("./lib_threads.lfi");
+    auto sbp = SboxType::create("./lib_threads.lfi");
+    if (!sbp) { fprintf(stderr, "failed to create sandbox\n"); return 1; }
+    SboxType& sb = *sbp;
 #else
     SboxType sb("./libthreads.so");
 #endif

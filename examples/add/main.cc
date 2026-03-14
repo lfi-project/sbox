@@ -14,7 +14,9 @@ int main() {
 #if defined(SBOX_PROCESS)
     sbox::Sandbox<sbox::Process> sandbox("./add_sandbox");
 #elif defined(SBOX_LFI)
-    sbox::Sandbox<sbox::LFI> sandbox("./lib_add.lfi");
+    auto sb = sbox::Sandbox<sbox::LFI>::create("./lib_add.lfi");
+    if (!sb) { fprintf(stderr, "failed to create sandbox\n"); return 1; }
+    auto& sandbox = *sb;
 #else
     sbox::Sandbox<sbox::Passthrough> sandbox("./libadd.so");
 #endif

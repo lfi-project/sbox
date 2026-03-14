@@ -18,7 +18,9 @@ int main() {
 #if defined(SBOX_PROCESS)
     sbox::Sandbox<sbox::Process> sandbox("./callback_sandbox");
 #elif defined(SBOX_LFI)
-    sbox::Sandbox<sbox::LFI> sandbox("./lib_callback.lfi");
+    auto sb = sbox::Sandbox<sbox::LFI>::create("./lib_callback.lfi");
+    if (!sb) { fprintf(stderr, "failed to create sandbox\n"); return 1; }
+    auto& sandbox = *sb;
 #else
     sbox::Sandbox<sbox::Passthrough> sandbox("./libcallback.so");
 #endif

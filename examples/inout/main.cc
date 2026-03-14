@@ -22,7 +22,9 @@ int main() {
     SboxType sandbox("./inout_sandbox");
     printf("Using process backend\n\n");
 #elif defined(SBOX_LFI)
-    SboxType sandbox("./lib_inout.lfi");
+    auto sb = SboxType::create("./lib_inout.lfi");
+    if (!sb) { fprintf(stderr, "failed to create sandbox\n"); return 1; }
+    auto& sandbox = *sb;
     printf("Using lfi backend\n\n");
 #else
     SboxType sandbox("./libinout.so");

@@ -2,7 +2,9 @@
 #include "test_helpers.hh"
 
 int main() {
-    sbox::Sandbox<sbox::LFI> sandbox("./testlib.lfi");
+    auto sb = sbox::Sandbox<sbox::LFI>::create("./testlib.lfi");
+    assert(sb);
+    auto& sandbox = *sb;
 #include "test_pointers.inc.cc"
     TEST_SUMMARY();
 }

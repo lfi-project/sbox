@@ -7,7 +7,9 @@ using SboxType = sbox::LFI;
 #include "test_helpers.hh"
 
 int main() {
-    sbox::Sandbox<SboxType> sandbox("./testlib.lfi");
+    auto sb = sbox::Sandbox<SboxType>::create("./testlib.lfi");
+    assert(sb);
+    auto& sandbox = *sb;
 #include "test_callbacks.inc.cc"
     TEST_SUMMARY();
 }

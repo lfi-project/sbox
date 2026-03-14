@@ -31,18 +31,26 @@ You can then sandbox and call it from C++:
 ```cpp
 #include <cstdio>
 #include "sbox/process.hh"
+#include "lib_add.h"  // declares: int add(int a, int b);
 
 int main() {
     sbox::Sandbox<sbox::Process> sandbox("./add_sandbox");
 
-    // Call by name (lookup is cached)
-    int result = sandbox.call<int(int, int)>("add", 2, 3);
+    // Call by name (signature deduced from header)
+    int result = sandbox.call(SBOX_FN(add), 2, 3);
     printf("add(2, 3) = %d\n", result);
 
     // Use a function handle for repeated calls
-    auto add = sandbox.fn<int(int, int)>("add");
-    printf("add(100, 200) = %d\n", add(100, 200));
+    auto add_fn = sandbox.fn(SBOX_FN(add));
+    printf("add(100, 200) = %d\n", add_fn(100, 200));
 }
+```
+
+You can also specify the signature explicitly instead of using `SBOX_FN`:
+
+```cpp
+int result = sandbox.call<int(int, int)>("add", 2, 3);
+auto add_fn = sandbox.fn<int(int, int)>("add");
 ```
 
 To swap to passthrough (no sandboxing), just compile to `libadd.so` and change
@@ -90,25 +98,9 @@ auto sandbox = sbox::Sandbox<sbox::LFI>::create("./libfoo.lfi");
 sbox_safe<int*> buf = sandbox->alloc<int>(10);    // verified, safe to use
 buf[0] = 42;
 
-sbox<int*> ptr = sandbox->call<int*(int*)>("get_ptr", buf);  // unchecked
+sbox<int*> ptr = sandbox->call(SBOX_FN(get_ptr), buf);  // unchecked
 sbox_safe<int*> safe = sandbox->verify(ptr, 10);             // now verified
 safe[0] = 42;
-```
-
-### Type-Safe Function Calls
-
-Instead of specifying the function signature manually at the call site, you can
-include the library's header and use `SBOX_FN` to automatically deduce it. The
-argument types are then checked against the header declaration at compile time.
-
-```cpp
-#include "lib_add.h"  // declares: int add(int a, int b);
-
-int result = sandbox.call(SBOX_FN(add), 2, 3);
-
-// Also works with function handles:
-sbox::FnHandle add_fn = sandbox.fn(SBOX_FN(add));
-int r = add_fn(100, 200);
 ```
 
 ### In/Out Parameters
@@ -120,12 +112,11 @@ between the host and sandbox.
 ```cpp
 auto ctx = sandbox.context();
 int counter = 5;
-sandbox.call<void(int*)>(ctx, "increment", ctx.inout(counter));
+sandbox.call(ctx, SBOX_FN(increment), ctx.inout(counter));
 // counter is now 6
 
 int result;
-sandbox.call<void(const int*, const int*, int*)>(ctx,
-    "add_to_result", ctx.in(a), ctx.in(b), ctx.out(result));
+sandbox.call(ctx, SBOX_FN(add_to_result), ctx.in(a), ctx.in(b), ctx.out(result));
 ```
 
 ### Callbacks
@@ -138,7 +129,7 @@ static int my_adder(int a, int b) {
 }
 
 auto cb = sandbox.register_callback(my_adder);
-int result = sandbox.call<int(int, int(*)(int, int))>("process_data", 42, cb);
+int result = sandbox.call(SBOX_FN(process_data), 42, cb);
 ```
 
 ### Shared Memory
@@ -158,7 +149,6 @@ void *sandbox_buf = sandbox.mmap(nullptr, 4096,
     PROT_READ | PROT_WRITE, MAP_SHARED, memfd, 0);
 
 // Sandbox writes are visible to the host and vice versa
-sandbox.call<void(void*, size_t, unsigned char)>(
-    "fill_buffer", sandbox_buf, (size_t)4096, (unsigned char)0xAB);
+sandbox.call(SBOX_FN(fill_buffer), sandbox_buf, (size_t)4096, (unsigned char)0xAB);
 // host_buf now contains 0xAB bytes
 ```

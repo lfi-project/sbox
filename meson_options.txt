@@ -1,2 +1,4 @@
 option('sbox_backend', type: 'combo', choices: ['passthrough', 'process', 'lfi'], value: 'passthrough',
-       description: 'Sandbox backend to use')
+       description: 'Sandbox backend to use for examples')
+option('enable_lfi', type: 'boolean', value: false,
+       description: 'Build the LFI backend (libsbox_lfi) and pull in the lfi-runtime subproject')

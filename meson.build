@@ -191,58 +191,65 @@ test('threads', test_threads,
 )
 
 # LFI backend
-lfi_subproj = subproject('lfi-runtime', default_options: ['enable_linux=true'])
-lfi_linux = lfi_subproj.get_variable('lfi_linux')
-lfi_inc = include_directories('subprojects/lfi-runtime/linux/include',
-                               'subprojects/lfi-runtime/core/include')
+enable_lfi = get_option('enable_lfi')
+if get_option('sbox_backend') == 'lfi' and not enable_lfi
+  error('sbox_backend=lfi requires -Denable_lfi=true')
+endif
 
-libsbox_lfi = static_library('sbox_lfi',
-  'src/sbox_lfi.cc',
-  include_directories: [sbox_inc, lfi_inc],
-  dependencies: [lfi_linux.as_link_whole()],
-  install: false,
-)
+if enable_lfi
+  lfi_subproj = subproject('lfi-runtime', default_options: ['enable_linux=true'])
+  lfi_linux = lfi_subproj.get_variable('lfi_linux')
+  lfi_inc = include_directories('subprojects/lfi-runtime/linux/include',
+                                 'subprojects/lfi-runtime/core/include')
 
-lficc_name = host_machine.cpu_family() == 'aarch64' ? 'aarch64_lfi-linux-musl-clang' : 'x86_64_lfi-linux-musl-clang'
-lficc = find_program(lficc_name, required: false)
-if lficc.found()
-  testlib_lfi = custom_target('testlib.lfi',
-    input: 'test/testlib.c',
-    output: 'testlib.lfi',
-    command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
+  libsbox_lfi = static_library('sbox_lfi',
+    'src/sbox_lfi.cc',
+    include_directories: [sbox_inc, lfi_inc],
+    dependencies: [lfi_linux.as_link_whole()],
+    install: false,
   )
 
-  foreach cat : test_categories
-    exe = executable('test_lfi_' + cat,
-      'test/test_lfi_' + cat + '.cc',
+  lficc_name = host_machine.cpu_family() == 'aarch64' ? 'aarch64_lfi-linux-musl-clang' : 'x86_64_lfi-linux-musl-clang'
+  lficc = find_program(lficc_name, required: false)
+  if lficc.found()
+    testlib_lfi = custom_target('testlib.lfi',
+      input: 'test/testlib.c',
+      output: 'testlib.lfi',
+      command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
+    )
+
+    foreach cat : test_categories
+      exe = executable('test_lfi_' + cat,
+        'test/test_lfi_' + cat + '.cc',
+        include_directories: [sbox_inc, lfi_inc, test_inc],
+        link_with: libsbox_lfi,
+        install: false,
+      )
+      test('lfi_' + cat, exe,
+        workdir: meson.current_build_dir(),
+        depends: [testlib_lfi],
+        protocol: 'tap',
+      )
+    endforeach
+
+    testlib2_lfi = custom_target('testlib2.lfi',
+      input: 'test/testlib2.c',
+      output: 'testlib2.lfi',
+      command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
+    )
+
+    test_lfi_multi_sandbox = executable('test_lfi_multi_sandbox',
+      'test/test_lfi_multi_sandbox.cc',
       include_directories: [sbox_inc, lfi_inc, test_inc],
       link_with: libsbox_lfi,
       install: false,
     )
-    test('lfi_' + cat, exe,
+    test('lfi_multi_sandbox', test_lfi_multi_sandbox,
       workdir: meson.current_build_dir(),
-      depends: [testlib_lfi],
+      depends: [testlib_lfi, testlib2_lfi],
       protocol: 'tap',
     )
-  endforeach
-
-  testlib2_lfi = custom_target('testlib2.lfi',
-    input: 'test/testlib2.c',
-    output: 'testlib2.lfi',
-    command: [lficc, '-static-pie', '-o', '@OUTPUT@', '@INPUT@', '-lboxrt', '-Wl,--export-dynamic', '-O2'],
-  )
-
-  test_lfi_multi_sandbox = executable('test_lfi_multi_sandbox',
-    'test/test_lfi_multi_sandbox.cc',
-    include_directories: [sbox_inc, lfi_inc, test_inc],
-    link_with: libsbox_lfi,
-    install: false,
-  )
-  test('lfi_multi_sandbox', test_lfi_multi_sandbox,
-    workdir: meson.current_build_dir(),
-    depends: [testlib_lfi, testlib2_lfi],
-    protocol: 'tap',
-  )
+  endif
 endif
 
 # Compile-failure tests (verify that type errors are caught at compile time)

@@ -60,7 +60,7 @@ int pbox_install_seccomp(void) {
         // Load syscall number
         BPF_LOAD_SYSCALL_NR,
 
-        // === Memory management ===
+        // Memory management
         BPF_SYSCALL_ALLOW(__NR_brk),
         BPF_SYSCALL_ALLOW(__NR_mmap),
         BPF_SYSCALL_ALLOW(__NR_munmap),
@@ -68,7 +68,7 @@ int pbox_install_seccomp(void) {
         BPF_SYSCALL_ALLOW(__NR_mremap),
         BPF_SYSCALL_ALLOW(__NR_madvise),
 
-        // === File descriptors (before clone to avoid BPF issues) ===
+        // File descriptors (before clone to avoid BPF issues)
         BPF_SYSCALL_ALLOW(__NR_close),
         BPF_SYSCALL_ALLOW(__NR_recvmsg),
 #ifdef __NR_socketcall
@@ -80,7 +80,7 @@ int pbox_install_seccomp(void) {
         BPF_LOAD_SYSCALL_NR,
 #endif
 
-        // === Threading (futex) ===
+        // Threading
         BPF_SYSCALL_ALLOW(__NR_futex),
 #ifdef __NR_futex_waitv
         BPF_SYSCALL_ALLOW(__NR_futex_waitv),
@@ -92,17 +92,17 @@ int pbox_install_seccomp(void) {
         BPF_SYSCALL_ALLOW(__NR_rseq),
 #endif
 
-        // === Signals ===
+        // Signals
         BPF_SYSCALL_ALLOW(__NR_rt_sigaction),
         BPF_SYSCALL_ALLOW(__NR_rt_sigprocmask),
         BPF_SYSCALL_ALLOW(__NR_rt_sigreturn),
         BPF_SYSCALL_ALLOW(__NR_sigaltstack),
 
-        // === Process exit ===
+        // Process exit
         BPF_SYSCALL_ALLOW(__NR_exit),
         BPF_SYSCALL_ALLOW(__NR_exit_group),
 
-    // === Architecture/TLS ===
+    // Architecture/TLS
 #ifdef __NR_arch_prctl
         BPF_SYSCALL_ALLOW(__NR_arch_prctl),
 #endif
@@ -114,7 +114,7 @@ int pbox_install_seccomp(void) {
         // Reload syscall number after arg check above.
         BPF_LOAD_SYSCALL_NR,
 
-        // === Safe information queries ===
+        // Safe information queries
         BPF_SYSCALL_ALLOW(__NR_getpid),
         BPF_SYSCALL_ALLOW(__NR_gettid),
         BPF_SYSCALL_ALLOW(__NR_getuid),
@@ -122,7 +122,7 @@ int pbox_install_seccomp(void) {
         BPF_SYSCALL_ALLOW(__NR_getgid),
         BPF_SYSCALL_ALLOW(__NR_getegid),
 
-        // === Misc commonly needed ===
+        // Misc commonly needed
         BPF_SYSCALL_ALLOW(__NR_getrandom),
         BPF_SYSCALL_ALLOW(__NR_clock_gettime),
         BPF_SYSCALL_ALLOW(__NR_clock_getres),
@@ -132,11 +132,11 @@ int pbox_install_seccomp(void) {
         BPF_SYSCALL_ALLOW(__NR_clock_nanosleep),
 #endif
 
-        // === Scheduler (for threads) ===
+        // Scheduler (for threads)
         BPF_SYSCALL_ALLOW(__NR_sched_yield),
         BPF_SYSCALL_ALLOW(__NR_sched_getaffinity),
 
-        // === Thread creation (for pthread_create) ===
+        // Thread creation (for pthread_create)
         BPF_SYSCALL_ALLOW(__NR_clone),
 #ifdef __NR_clone3
         BPF_SYSCALL_ALLOW(__NR_clone3),
@@ -148,7 +148,7 @@ int pbox_install_seccomp(void) {
         BPF_SYSCALL_ALLOW(__NR_membarrier),
 #endif
 
-        // === Default: return ENOSYS for unallowed syscalls ===
+        // Default: return ENOSYS for unallowed syscalls
         BPF_RETURN(ERRNO(ENOSYS)),
     };
 

@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "pbox_internal.h"
 #include "pbox_seccomp.h"
 

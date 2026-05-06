@@ -63,14 +63,11 @@ dyfn_call:
         b    dyfn_closure_common
 .endm
 
-.macro gen_stubs i
-    .if \i < DYFN_MAX_CLOSURES_ASM
-        closure_stub \i
-        gen_stubs %(\i + 1)
-    .endif
-.endm
-
-gen_stubs 0
+.set _stub_i, 0
+.rept DYFN_MAX_CLOSURES_ASM
+    closure_stub %_stub_i
+    .set _stub_i, _stub_i + 1
+.endr
 
 // Common closure handler.
 // On entry: w9 = stub index, all arg registers live from caller.
@@ -118,18 +115,19 @@ dyfn_closure_common:
     ldp  x29, x30, [sp], #CLOSURE_TOTAL_SIZE
     ret
 
-.macro gen_table_entry i
-    .if \i < DYFN_MAX_CLOSURES_ASM
-        .quad dyfn_stub_\i
-        gen_table_entry %(\i + 1)
-    .endif
+.macro table_entry i
+    .quad dyfn_stub_\i
 .endm
 
 .data
 .p2align 3
 .global dyfn_stub_table
 dyfn_stub_table:
-    gen_table_entry 0
+.set _tbl_i, 0
+.rept DYFN_MAX_CLOSURES_ASM
+    table_entry %_tbl_i
+    .set _tbl_i, _tbl_i + 1
+.endr
 
 #endif // SBOX_NO_CALLBACKS
 

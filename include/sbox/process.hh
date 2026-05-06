@@ -10,7 +10,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
-#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -505,8 +504,10 @@ public:
     template<typename T>
     T* out(T& host_ref) {
         T* idmem_ptr = sandbox_->template idmem_alloc<T>();
-        if (!idmem_ptr)
-            throw std::runtime_error("idmem_alloc failed");
+        if (!idmem_ptr) {
+            fprintf(stderr, "sbox: idmem_alloc failed\n");
+            abort();
+        }
         T* host_ptr = &host_ref;
         copybacks_.push_back(
             [host_ptr, idmem_ptr]() { *host_ptr = *idmem_ptr; });
@@ -517,8 +518,10 @@ public:
     template<typename T>
     const T* in(const T& host_ref) {
         T* idmem_ptr = sandbox_->template idmem_alloc<T>();
-        if (!idmem_ptr)
-            throw std::runtime_error("idmem_alloc failed");
+        if (!idmem_ptr) {
+            fprintf(stderr, "sbox: idmem_alloc failed\n");
+            abort();
+        }
         *idmem_ptr = host_ref;
         return idmem_ptr;
     }
@@ -527,8 +530,10 @@ public:
     template<typename T>
     T* inout(T& host_ref) {
         T* idmem_ptr = sandbox_->template idmem_alloc<T>();
-        if (!idmem_ptr)
-            throw std::runtime_error("idmem_alloc failed");
+        if (!idmem_ptr) {
+            fprintf(stderr, "sbox: idmem_alloc failed\n");
+            abort();
+        }
         T* host_ptr = &host_ref;
         *idmem_ptr = host_ref;
         copybacks_.push_back(

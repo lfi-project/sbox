@@ -15,8 +15,18 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <linux/close_range.h>
+
+#ifndef SYS_close_range
+#define SYS_close_range 436
+#endif
+
+static inline int pbox_close_range(unsigned int first, unsigned int last, unsigned int flags) {
+    return syscall(SYS_close_range, first, last, flags);
+}
 
 #define PBOX_FD_DIRECT_MAX 128
 #define PBOX_MAX_CALLBACKS 64
@@ -385,7 +395,7 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         // Child process.
         // Mark all FDs >= 3 as close-on-exec to prevent leaking host FDs,
         // then clear close-on-exec on the two FDs we need to pass.
-        close_range(3, ~0U, CLOSE_RANGE_CLOEXEC);
+        pbox_close_range(3, ~0U, CLOSE_RANGE_CLOEXEC);
         fcntl(box->control_shm_fd, F_SETFD, 0);
         fcntl(sock_fds[1], F_SETFD, 0);
 

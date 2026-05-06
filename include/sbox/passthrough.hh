@@ -34,7 +34,8 @@ public:
         offset_ = (offset_ + align - 1) & ~(align - 1);
 
         if (!base_ || offset_ + size > DEFAULT_SIZE) {
-            return nullptr;
+            fprintf(stderr, "sbox: idmem_alloc failed\n");
+            abort();
         }
 
         void* ptr = base_ + offset_;
@@ -59,10 +60,9 @@ inline PassthroughArena& get_thread_arena() {
 // overhead) Defined before Sandbox since it doesn't need Sandbox to be complete
 template<>
 class CallContext<Passthrough> {
-    Sandbox<Passthrough>* sandbox_;
-
 public:
-    explicit CallContext(Sandbox<Passthrough>& sb) : sandbox_(&sb) {
+    explicit CallContext(Sandbox<Passthrough>& sb) {
+        (void) sb;
     }
 
     // No-op for passthrough

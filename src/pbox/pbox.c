@@ -24,8 +24,24 @@
 #define SYS_close_range 436
 #endif
 
+#ifndef SYS_pidfd_open
+#define SYS_pidfd_open 434
+#endif
+
+#ifndef SYS_pidfd_send_signal
+#define SYS_pidfd_send_signal 424
+#endif
+
 static inline int pbox_close_range(unsigned int first, unsigned int last, unsigned int flags) {
     return syscall(SYS_close_range, first, last, flags);
+}
+
+static inline int pbox_pidfd_open(pid_t pid) {
+    return (int) syscall(SYS_pidfd_open, pid, 0);
+}
+
+static inline int pbox_pidfd_kill(int pidfd) {
+    return (int) syscall(SYS_pidfd_send_signal, pidfd, SIGKILL, NULL, 0);
 }
 
 #define PBOX_FD_DIRECT_MAX 128
@@ -62,7 +78,9 @@ struct PBox {
     int control_shm_fd;
 
     pid_t pid;
+    int pidfd;    // Stable handle to the sandbox process (avoids pid reuse)
     int sock_fd;  // Unix socket for fd passing
+    pthread_mutex_t send_fd_lock;  // Serializes sendmsg+signal on sock_fd
     pthread_t watcher_thread;
 
     // Thread-local channel support
@@ -321,10 +339,24 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         return NULL;
     }
 
+    // Initialize mutex for fd-passing serialization. Held across the entire
+    // sendmsg/signal/wait sequence in pbox_send_fd_on_channel so that
+    // concurrent senders cannot misorder cmsgs across worker channels.
+    if (pthread_mutex_init(&box->send_fd_lock, NULL) != 0) {
+        perror("pbox: pthread_mutex_init");
+        pthread_mutex_destroy(&box->channel_lock);
+        pthread_key_delete(box->channel_key);
+        pthread_mutex_destroy(&box->callback_lock);
+        pthread_mutex_destroy(&box->fd_lock);
+        free(box);
+        return NULL;
+    }
+
     // Create anonymous shared memory for control channel.
     box->control_shm_fd = memfd_create("pbox_control", MFD_CLOEXEC);
     if (box->control_shm_fd < 0) {
         perror("pbox: memfd_create");
+        pthread_mutex_destroy(&box->send_fd_lock);
         pthread_mutex_destroy(&box->channel_lock);
         pthread_mutex_destroy(&box->callback_lock);
         pthread_mutex_destroy(&box->fd_lock);
@@ -337,6 +369,7 @@ struct PBox* pbox_create(const char* sandbox_executable) {
     if (ftruncate(box->control_shm_fd, sizeof(struct PBoxChannel)) < 0) {
         perror("pbox: ftruncate");
         close(box->control_shm_fd);
+        pthread_mutex_destroy(&box->send_fd_lock);
         pthread_mutex_destroy(&box->channel_lock);
         pthread_mutex_destroy(&box->callback_lock);
         pthread_mutex_destroy(&box->fd_lock);
@@ -352,6 +385,7 @@ struct PBox* pbox_create(const char* sandbox_executable) {
     if (box->control_channel == MAP_FAILED) {
         perror("pbox: mmap");
         close(box->control_shm_fd);
+        pthread_mutex_destroy(&box->send_fd_lock);
         pthread_mutex_destroy(&box->channel_lock);
         pthread_mutex_destroy(&box->callback_lock);
         pthread_mutex_destroy(&box->fd_lock);
@@ -369,6 +403,7 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         perror("pbox: socketpair");
         munmap(box->control_channel, sizeof(struct PBoxChannel));
         close(box->control_shm_fd);
+        pthread_mutex_destroy(&box->send_fd_lock);
         pthread_mutex_destroy(&box->channel_lock);
         pthread_mutex_destroy(&box->callback_lock);
         pthread_mutex_destroy(&box->fd_lock);
@@ -383,6 +418,7 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         perror("pbox: fork");
         munmap(box->control_channel, sizeof(struct PBoxChannel));
         close(box->control_shm_fd);
+        pthread_mutex_destroy(&box->send_fd_lock);
         pthread_mutex_destroy(&box->channel_lock);
         pthread_mutex_destroy(&box->callback_lock);
         pthread_mutex_destroy(&box->fd_lock);
@@ -411,15 +447,36 @@ struct PBox* pbox_create(const char* sandbox_executable) {
     close(sock_fds[1]);
     box->sock_fd = sock_fds[0];
 
-    // Start watcher thread to detect sandbox death.
-    if (pthread_create(&box->watcher_thread, NULL, watcher_thread_fn, box) !=
-        0) {
-        perror("pbox: pthread_create");
-        kill(box->pid, SIGKILL);
+    // Open a pidfd for the child so we can signal it without racing pid
+    // reuse. Done before any path that might want to kill it on failure.
+    box->pidfd = pbox_pidfd_open(box->pid);
+    if (box->pidfd < 0) {
+        perror("pbox: pidfd_open");
+        kill(box->pid, SIGKILL);  // safe: nothing else has reaped this pid yet
         waitpid(box->pid, NULL, 0);
         munmap(box->control_channel, sizeof(struct PBoxChannel));
         close(box->control_shm_fd);
         close(box->sock_fd);
+        pthread_mutex_destroy(&box->send_fd_lock);
+        pthread_mutex_destroy(&box->channel_lock);
+        pthread_mutex_destroy(&box->callback_lock);
+        pthread_mutex_destroy(&box->fd_lock);
+        pthread_key_delete(box->channel_key);
+        free(box);
+        return NULL;
+    }
+
+    // Start watcher thread to detect sandbox death.
+    if (pthread_create(&box->watcher_thread, NULL, watcher_thread_fn, box) !=
+        0) {
+        perror("pbox: pthread_create");
+        pbox_pidfd_kill(box->pidfd);
+        waitpid(box->pid, NULL, 0);
+        close(box->pidfd);
+        munmap(box->control_channel, sizeof(struct PBoxChannel));
+        close(box->control_shm_fd);
+        close(box->sock_fd);
+        pthread_mutex_destroy(&box->send_fd_lock);
         pthread_mutex_destroy(&box->channel_lock);
         pthread_mutex_destroy(&box->callback_lock);
         pthread_mutex_destroy(&box->fd_lock);
@@ -444,9 +501,13 @@ struct PBox* pbox_create(const char* sandbox_executable) {
 }
 
 void pbox_destroy(struct PBox* box) {
-    // Kill the sandbox process.
+    // Kill the sandbox process via pidfd. Using kill(pid) here would race
+    // against the watcher thread reaping the child: if the sandbox died on
+    // its own and was already reaped, the pid number could be recycled by
+    // the kernel and SIGKILL would land on an unrelated process. pidfd
+    // refers to the specific task and returns ESRCH cleanly if it's gone.
     atomic_store(&box->destroying, 1);
-    kill(box->pid, SIGKILL);
+    pbox_pidfd_kill(box->pidfd);
 
     // Wait for watcher thread (which waits for child).
     pthread_join(box->watcher_thread, NULL);
@@ -470,7 +531,9 @@ void pbox_destroy(struct PBox* box) {
     munmap(box->control_channel, sizeof(struct PBoxChannel));
     close(box->control_shm_fd);
     close(box->sock_fd);
+    close(box->pidfd);
 
+    pthread_mutex_destroy(&box->send_fd_lock);
     pthread_mutex_destroy(&box->channel_lock);
     pthread_mutex_destroy(&box->callback_lock);
     pthread_mutex_destroy(&box->fd_lock);
@@ -634,10 +697,19 @@ void pbox_call(struct PBox* box, void* func_addr, enum PBoxType ret_type,
     }
 }
 
-// Internal: actually send an fd without checking cache
+// Internal: actually send an fd without checking cache.
+//
+// Holds send_fd_lock across the full sendmsg/signal/wait sequence. Without
+// this lock, two host threads sending fds on different channels can race:
+// the cmsgs travel in unix-socket FIFO order, but the sandbox workers
+// recvmsg() on the shared socket in whichever order the kernel schedules
+// them, so worker A can pick up worker B's fd. Serializing the entire
+// transaction guarantees that each cmsg is matched with the worker that
+// was signaled to receive it.
 static int pbox_send_fd_on_channel(struct PBox* box, struct PBoxChannel* ch,
                                    int fd) {
-    // Send fd over socket using SCM_RIGHTS
+    pthread_mutex_lock(&box->send_fd_lock);
+
     struct msghdr msg = {0};
     struct iovec iov;
     char buf[1] = {0};
@@ -656,8 +728,10 @@ static int pbox_send_fd_on_channel(struct PBox* box, struct PBoxChannel* ch,
     cmsg->cmsg_len = CMSG_LEN(sizeof(int));
     memcpy(CMSG_DATA(cmsg), &fd, sizeof(int));
 
-    if (sendmsg(box->sock_fd, &msg, 0) < 0)
+    if (sendmsg(box->sock_fd, &msg, 0) < 0) {
+        pthread_mutex_unlock(&box->send_fd_lock);
         return -1;
+    }
 
     // Signal sandbox to receive the fd
     ch->request_type = PBOX_REQ_RECV_FD;
@@ -665,7 +739,9 @@ static int pbox_send_fd_on_channel(struct PBox* box, struct PBoxChannel* ch,
     pbox_wait_for_state(&ch->state, PBOX_STATE_RESPONSE);
     atomic_store(&ch->state, PBOX_STATE_IDLE);
 
-    return ch->received_fd;
+    int received = ch->received_fd;
+    pthread_mutex_unlock(&box->send_fd_lock);
+    return received;
 }
 
 // Internal: add fd mapping to cache

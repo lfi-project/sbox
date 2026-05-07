@@ -3,8 +3,8 @@
 #include <string.h>
 
 #ifndef SBOX_NO_CALLBACKS
-__thread struct DyfnClosureInfo dyfn_closure_info[DYFN_MAX_CLOSURES];
-__thread int dyfn_closure_count = 0;
+struct DyfnClosureInfo dyfn_closure_info[DYFN_MAX_CLOSURES];
+atomic_int dyfn_closure_count = 0;
 #endif
 
 enum DyfnClass dyfn_classify(enum DyfnType type) {
@@ -96,10 +96,15 @@ void dyfn_store_result(const struct DyfnCallResult* result,
 
 void* dyfn_closure_alloc(int callback_id, enum DyfnType ret_type, int nargs,
                          const enum DyfnType* arg_types) {
-    if (dyfn_closure_count >= DYFN_MAX_CLOSURES)
+    // Caller (the sandbox dispatch loop, driven by a host RPC) is serialized
+    // by the host's callback registration lock, so we don't need a CAS loop
+    // here. The atomic is used only to publish the slot's contents to readers
+    // (closure dispatchers running on other worker threads) with release/acquire
+    // ordering.
+    int slot = atomic_load_explicit(&dyfn_closure_count, memory_order_relaxed);
+    if (slot >= DYFN_MAX_CLOSURES)
         return NULL;
 
-    int slot = dyfn_closure_count++;
     struct DyfnClosureInfo* info = &dyfn_closure_info[slot];
     info->callback_id = callback_id;
     info->ret_type = ret_type;
@@ -108,11 +113,8 @@ void* dyfn_closure_alloc(int callback_id, enum DyfnType ret_type, int nargs,
         info->arg_types[i] = arg_types[i];
     info->active = true;
 
+    atomic_store_explicit(&dyfn_closure_count, slot + 1, memory_order_release);
     return dyfn_stub_table[slot];
-}
-
-void dyfn_closure_free_all(void) {
-    dyfn_closure_count = 0;
 }
 
 #endif  // SBOX_NO_CALLBACKS

@@ -136,7 +136,7 @@ foreach t : passthrough_extra_tests
 endforeach
 
 # Process-specific tests
-process_extra_tests = ['specific', 'multi']
+process_extra_tests = ['specific', 'multi', 'callbacks_xthread']
 
 foreach t : process_extra_tests
   exe = executable('test_process_' + t,

@@ -178,9 +178,6 @@ int pbox_spawn_worker(int shm_fd) {
 // Main dispatch loop - handles requests until EXIT state
 static void dispatch_loop(struct PBoxChannel* ch, bool is_control) {
     tls_current_channel = ch;
-#ifndef SBOX_NO_CALLBACKS
-    dyfn_closure_free_all();
-#endif
 
     while (1) {
         // Wait for a request (or exit signal)
@@ -188,12 +185,8 @@ static void dispatch_loop(struct PBoxChannel* ch, bool is_control) {
             int state = atomic_load(&ch->state);
             if (state == PBOX_STATE_REQUEST)
                 break;
-            if (state == PBOX_STATE_EXIT) {
-#ifndef SBOX_NO_CALLBACKS
-                dyfn_closure_free_all();
-#endif
+            if (state == PBOX_STATE_EXIT)
                 return;
-            }
             pbox_futex_wait(&ch->state, state);
         }
 

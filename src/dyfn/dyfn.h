@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -102,12 +103,17 @@ struct DyfnClosureInfo {
     bool active;
 };
 
-extern __thread struct DyfnClosureInfo dyfn_closure_info[DYFN_MAX_CLOSURES];
-extern __thread int dyfn_closure_count;
+// Closure slots are global (not per-thread). The host serializes closure
+// allocation via its callback registration lock, but reads of slots happen
+// from any sandbox worker thread that invokes a closure stub. Each slot is
+// fully written before dyfn_closure_count is bumped (release-store), and
+// readers see a slot only via a stub address that was returned after that
+// publish, so the read sees the fully-initialized slot.
+extern struct DyfnClosureInfo dyfn_closure_info[DYFN_MAX_CLOSURES];
+extern atomic_int dyfn_closure_count;
 
 void* dyfn_closure_alloc(int callback_id, enum DyfnType ret_type, int nargs,
                          const enum DyfnType* arg_types);
-void dyfn_closure_free_all(void);
 
 extern void* dyfn_stub_table[DYFN_MAX_CLOSURES];
 

@@ -44,7 +44,6 @@ static inline int pbox_pidfd_kill(int pidfd) {
     return (int) syscall(SYS_pidfd_send_signal, pidfd, SIGKILL, NULL, 0);
 }
 
-#define PBOX_FD_DIRECT_MAX 128
 #define PBOX_MAX_CALLBACKS 64
 
 struct PBoxCallback {
@@ -54,11 +53,6 @@ struct PBoxCallback {
     int nargs;
     enum PBoxType arg_types[PBOX_MAX_ARGS];
     void* sandbox_closure;
-};
-
-struct PBoxFdEntry {
-    int host_fd;
-    int sandbox_fd;
 };
 
 struct PBoxThreadChannel {
@@ -101,13 +95,6 @@ struct PBox {
     void* sym_munmap;
     void* sym_memcpy;
     void* sym_close;
-
-    // Fd mapping: direct table for small fds, dynamic vector for large fds
-    pthread_mutex_t fd_lock;
-    int fd_direct[PBOX_FD_DIRECT_MAX];  // -1 = not mapped
-    struct PBoxFdEntry* fd_overflow;
-    size_t fd_overflow_count;
-    size_t fd_overflow_cap;
 
     // Callback registry
     pthread_mutex_t callback_lock;
@@ -294,22 +281,9 @@ struct PBox* pbox_create(const char* sandbox_executable) {
 
     atomic_init(&box->destroying, 0);
 
-    // Initialize fd mapping.
-    if (pthread_mutex_init(&box->fd_lock, NULL) != 0) {
-        perror("pbox: pthread_mutex_init");
-        free(box);
-        return NULL;
-    }
-    for (int i = 0; i < PBOX_FD_DIRECT_MAX; i++)
-        box->fd_direct[i] = -1;
-    box->fd_overflow = NULL;
-    box->fd_overflow_count = 0;
-    box->fd_overflow_cap = 0;
-
     // Initialize callback registry.
     if (pthread_mutex_init(&box->callback_lock, NULL) != 0) {
         perror("pbox: pthread_mutex_init");
-        pthread_mutex_destroy(&box->fd_lock);
         free(box);
         return NULL;
     }
@@ -324,7 +298,6 @@ struct PBox* pbox_create(const char* sandbox_executable) {
     if (pthread_key_create(&box->channel_key, channel_destructor) != 0) {
         perror("pbox: pthread_key_create");
         pthread_mutex_destroy(&box->callback_lock);
-        pthread_mutex_destroy(&box->fd_lock);
         free(box);
         return NULL;
     }
@@ -334,7 +307,6 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         perror("pbox: pthread_mutex_init");
         pthread_key_delete(box->channel_key);
         pthread_mutex_destroy(&box->callback_lock);
-        pthread_mutex_destroy(&box->fd_lock);
         free(box);
         return NULL;
     }
@@ -347,7 +319,6 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         pthread_mutex_destroy(&box->channel_lock);
         pthread_key_delete(box->channel_key);
         pthread_mutex_destroy(&box->callback_lock);
-        pthread_mutex_destroy(&box->fd_lock);
         free(box);
         return NULL;
     }
@@ -359,7 +330,6 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         pthread_mutex_destroy(&box->send_fd_lock);
         pthread_mutex_destroy(&box->channel_lock);
         pthread_mutex_destroy(&box->callback_lock);
-        pthread_mutex_destroy(&box->fd_lock);
         pthread_key_delete(box->channel_key);
         free(box);
         return NULL;
@@ -372,7 +342,6 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         pthread_mutex_destroy(&box->send_fd_lock);
         pthread_mutex_destroy(&box->channel_lock);
         pthread_mutex_destroy(&box->callback_lock);
-        pthread_mutex_destroy(&box->fd_lock);
         pthread_key_delete(box->channel_key);
         free(box);
         return NULL;
@@ -388,7 +357,6 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         pthread_mutex_destroy(&box->send_fd_lock);
         pthread_mutex_destroy(&box->channel_lock);
         pthread_mutex_destroy(&box->callback_lock);
-        pthread_mutex_destroy(&box->fd_lock);
         pthread_key_delete(box->channel_key);
         free(box);
         return NULL;
@@ -406,7 +374,6 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         pthread_mutex_destroy(&box->send_fd_lock);
         pthread_mutex_destroy(&box->channel_lock);
         pthread_mutex_destroy(&box->callback_lock);
-        pthread_mutex_destroy(&box->fd_lock);
         pthread_key_delete(box->channel_key);
         free(box);
         return NULL;
@@ -421,7 +388,6 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         pthread_mutex_destroy(&box->send_fd_lock);
         pthread_mutex_destroy(&box->channel_lock);
         pthread_mutex_destroy(&box->callback_lock);
-        pthread_mutex_destroy(&box->fd_lock);
         pthread_key_delete(box->channel_key);
         free(box);
         return NULL;
@@ -460,7 +426,6 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         pthread_mutex_destroy(&box->send_fd_lock);
         pthread_mutex_destroy(&box->channel_lock);
         pthread_mutex_destroy(&box->callback_lock);
-        pthread_mutex_destroy(&box->fd_lock);
         pthread_key_delete(box->channel_key);
         free(box);
         return NULL;
@@ -479,7 +444,6 @@ struct PBox* pbox_create(const char* sandbox_executable) {
         pthread_mutex_destroy(&box->send_fd_lock);
         pthread_mutex_destroy(&box->channel_lock);
         pthread_mutex_destroy(&box->callback_lock);
-        pthread_mutex_destroy(&box->fd_lock);
         pthread_key_delete(box->channel_key);
         free(box);
         return NULL;
@@ -536,10 +500,8 @@ void pbox_destroy(struct PBox* box) {
     pthread_mutex_destroy(&box->send_fd_lock);
     pthread_mutex_destroy(&box->channel_lock);
     pthread_mutex_destroy(&box->callback_lock);
-    pthread_mutex_destroy(&box->fd_lock);
     pthread_key_delete(box->channel_key);
 
-    free(box->fd_overflow);
     free(box);
 }
 
@@ -744,87 +706,21 @@ static int pbox_send_fd_on_channel(struct PBox* box, struct PBoxChannel* ch,
     return received;
 }
 
-// Internal: add fd mapping to cache
-static void pbox_cache_fd(struct PBox* box, int host_fd, int sandbox_fd) {
-    if (host_fd < PBOX_FD_DIRECT_MAX) {
-        box->fd_direct[host_fd] = sandbox_fd;
-        return;
-    }
-
-    // Grow overflow vector if needed
-    if (box->fd_overflow_count >= box->fd_overflow_cap) {
-        size_t new_cap = box->fd_overflow_cap ? box->fd_overflow_cap * 2 : 8;
-        struct PBoxFdEntry* new_vec =
-            realloc(box->fd_overflow, new_cap * sizeof(struct PBoxFdEntry));
-        if (!new_vec)
-            return;  // Can't cache, but not fatal
-        box->fd_overflow = new_vec;
-        box->fd_overflow_cap = new_cap;
-    }
-
-    box->fd_overflow[box->fd_overflow_count].host_fd = host_fd;
-    box->fd_overflow[box->fd_overflow_count].sandbox_fd = sandbox_fd;
-    box->fd_overflow_count++;
-}
-
-// Internal: lookup fd in cache, returns -1 if not found
-static int pbox_lookup_fd(struct PBox* box, int host_fd) {
-    if (host_fd < PBOX_FD_DIRECT_MAX)
-        return box->fd_direct[host_fd];
-
-    for (size_t i = 0; i < box->fd_overflow_count; i++) {
-        if (box->fd_overflow[i].host_fd == host_fd)
-            return box->fd_overflow[i].sandbox_fd;
-    }
-    return -1;
-}
-
+// Send a host fd into the sandbox and return the sandbox-side fd. Each call
+// is a fresh sendmsg/recvmsg: there is no host_fd→sandbox_fd cache, because
+// host fd numbers can be reused after close() and a cache keyed on them
+// would silently alias old and new files. Callers that re-send the same
+// host fd get distinct sandbox fds and are responsible for closing both
+// via pbox_close.
 int pbox_send_fd(struct PBox* box, int fd) {
     if (fd < 0)
         return fd;
 
-    pthread_mutex_lock(&box->fd_lock);
-
-    // Return cached sandbox fd if already sent
-    int cached = pbox_lookup_fd(box, fd);
-    if (cached >= 0) {
-        pthread_mutex_unlock(&box->fd_lock);
-        return cached;
-    }
-
-    // Get thread-local channel
     struct PBoxChannel* ch = get_or_create_channel(box);
-    if (!ch) {
-        pthread_mutex_unlock(&box->fd_lock);
+    if (!ch)
         return -1;
-    }
 
-    // Send and cache
-    int sandbox_fd = pbox_send_fd_on_channel(box, ch, fd);
-    if (sandbox_fd >= 0)
-        pbox_cache_fd(box, fd, sandbox_fd);
-
-    pthread_mutex_unlock(&box->fd_lock);
-    return sandbox_fd;
-}
-
-// Invalidate fd cache entry for a sandbox fd
-static void pbox_uncache_fd(struct PBox* box, int sandbox_fd) {
-    // Check direct table
-    for (int i = 0; i < PBOX_FD_DIRECT_MAX; i++) {
-        if (box->fd_direct[i] == sandbox_fd) {
-            box->fd_direct[i] = -1;
-            return;
-        }
-    }
-
-    // Check overflow table
-    for (size_t i = 0; i < box->fd_overflow_count; i++) {
-        if (box->fd_overflow[i].sandbox_fd == sandbox_fd) {
-            box->fd_overflow[i] = box->fd_overflow[--box->fd_overflow_count];
-            return;
-        }
-    }
+    return pbox_send_fd_on_channel(box, ch, fd);
 }
 
 int pbox_close(struct PBox* box, int sandbox_fd) {
@@ -836,14 +732,6 @@ int pbox_close(struct PBox* box, int sandbox_fd) {
     void* args[] = {&sandbox_fd};
     pbox_call(box, box->sym_close, PBOX_TYPE_SINT32, 1, arg_types, args,
               &result);
-
-    // Invalidate cache entry
-    if (result == 0) {
-        pthread_mutex_lock(&box->fd_lock);
-        pbox_uncache_fd(box, sandbox_fd);
-        pthread_mutex_unlock(&box->fd_lock);
-    }
-
     return result;
 }
 
@@ -919,12 +807,23 @@ void* pbox_mmap_box_fd(struct PBox* box, void* addr, size_t length, int prot,
 
 void* pbox_mmap(struct PBox* box, void* addr, size_t length, int prot,
                 int flags, int fd, off_t offset) {
-    // Translate host fd to sandbox fd (sends if not already sent)
-    int sandbox_fd = pbox_send_fd(box, fd);
-    if (fd >= 0 && sandbox_fd < 0)
-        return MAP_FAILED;
+    int sandbox_fd = -1;
+    if (fd >= 0) {
+        sandbox_fd = pbox_send_fd(box, fd);
+        if (sandbox_fd < 0)
+            return MAP_FAILED;
+    }
 
-    return pbox_mmap_box_fd(box, addr, length, prot, flags, sandbox_fd, offset);
+    void* result =
+        pbox_mmap_box_fd(box, addr, length, prot, flags, sandbox_fd, offset);
+
+    // Drop the sandbox-side fd: the mapping holds its own reference, so the
+    // fd is no longer needed past the mmap. Without this, every pbox_mmap
+    // call would leak one fd in the sandbox.
+    if (sandbox_fd >= 0)
+        pbox_close(box, sandbox_fd);
+
+    return result;
 }
 
 int pbox_munmap(struct PBox* box, void* addr, size_t length) {
@@ -960,8 +859,6 @@ void* pbox_mmap_identity(struct PBox* box, size_t length, int prot) {
         return NULL;
     }
 
-    // Send fd to sandbox without caching -- this memfd is temporary and
-    // will be closed after mapping, so caching would leave a stale entry.
     struct PBoxChannel* ch = get_or_create_channel(box);
     if (!ch) {
         munmap(host_addr, length);
@@ -987,6 +884,8 @@ void* pbox_mmap_identity(struct PBox* box, size_t length, int prot) {
               &sandbox_addr);
 
     if (sandbox_addr == host_addr) {
+        // Sandbox-side fd is no longer needed once the mapping is established.
+        pbox_close(box, sandbox_fd);
         close(memfd);
         return host_addr;
     }
@@ -999,6 +898,7 @@ void* pbox_mmap_identity(struct PBox* box, size_t length, int prot) {
     void* common_addr =
         pbox_find_common_free_address(getpid(), box->pid, length);
     if (!common_addr) {
+        pbox_close(box, sandbox_fd);
         close(memfd);
         return NULL;
     }
@@ -1009,6 +909,7 @@ void* pbox_mmap_identity(struct PBox* box, size_t length, int prot) {
     if (host_addr != common_addr) {
         if (host_addr != MAP_FAILED)
             munmap(host_addr, length);
+        pbox_close(box, sandbox_fd);
         close(memfd);
         return NULL;
     }
@@ -1022,10 +923,12 @@ void* pbox_mmap_identity(struct PBox* box, size_t length, int prot) {
         if (sandbox_addr != MAP_FAILED)
             pbox_munmap(box, sandbox_addr, length);
         munmap(host_addr, length);
+        pbox_close(box, sandbox_fd);
         close(memfd);
         return NULL;
     }
 
+    pbox_close(box, sandbox_fd);
     close(memfd);
     return common_addr;
 }
